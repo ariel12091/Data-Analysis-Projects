@@ -1,3 +1,11 @@
+library(dplyr)
+library(rvest)
+library(stringr)
+library(tidyverse)
+library(patchwork)
+library(janitor)
+library(lubridate)
+
 scrape_game_id <- function (start_date, finish_date) {
 
 url_games <- "https://www.basketball-reference.com/leagues/NBA_2020_games.html"
