@@ -56,3 +56,10 @@ plz <- as.data.frame(matrix(unlist(str_split(test_test_test,pattern = "Jump|ball
                   plz<-cbind(plz,rep(games[i],nrow(plz)))
                   df<- rbind(df, plz)
                   }
+
+
+df_final <- df %>% select (time, event, visit_score, home_score, home_adv, visit_adv, team, qurt,shot_type) %>% 
+   mutate(game_id = as.character(df$`rep(games[i], nrow(plz))`), across(contains("score"),as.numeric),time_minutes = round(time / 60),distance = 
+             as.numeric(str_extract(event, pattern = "(?<=from)(.*)(?=ft)")), is_leading = if_else(visit_adv > 0 & team == "visit_team"|visit_adv < 0 & team == "home_team", TRUE, FALSE)) %>% 
+
+
