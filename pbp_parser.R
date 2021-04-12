@@ -63,3 +63,23 @@ df_final <- df %>% select (time, event, visit_score, home_score, home_adv, visit
              as.numeric(str_extract(event, pattern = "(?<=from)(.*)(?=ft)")), is_leading = if_else(visit_adv > 0 & team == "visit_team"|visit_adv < 0 & team == "home_team", TRUE, FALSE))
 
 
+df_final_pbp_games_2021 <- left_join(df_final,df_games,by = "game_id") %>% mutate (adv = case_when(team == "visit_team"~visit_adv,
+                                                                                                        team == "home_team"~home_adv)) %>% mutate(end_poss = case_when (str_detect(event,"makes [2-3]{1}-pt")~TRUE,
+                                                                                        str_detect(event,"misses [2-3]{1}-pt") & lead(str_detect(event,"Defensive rebound"))~TRUE,
+                                                                                        str_detect(event,"misses free throw 2 of 2") & lead(str_detect(event,"Defensive rebound"))~TRUE,
+                                                                                        str_detect(event,"misses free throw 3 of 3") & lead(str_detect(event,"Defensive rebound"))~TRUE,
+                                                                                        str_detect(event, "makes free throw 2 of 2")~TRUE,
+                                                                                        str_detect(event, "makes free throw 3 of 3")~TRUE,
+                                                                                        str_detect(event,"Turnover")~TRUE,
+                                                                                        TRUE~FALSE)) %>% mutate (points = case_when(str_detect(event,"makes 2-pt")~2,
+                                                                                                                                    str_detect(event,"makes 3-pt")~3,
+                                                                                                                                    str_detect(event,"makes free throw")~1,
+                                                                                                                                    TRUE~0)) %>% mutate (team_offense = case_when (team == "visit_team"~visitor_team_name,
+                                                                                                                                                                            team == "home_team"~home_team_name),
+                                                                                                                             team_defense = case_when(team == "visit_team"~home_team_name,
+                                                                                                                                                                                  team == "home_team"~visitor_team_name)) %>% mutate (time_offense = as.duration(time - lag(time,1))) %>%
+                                                                                                                                                                  mutate (has_made = str_extract(event, "misses|makes")) %>%  
+                                                                                                                                      mutate (has_made = case_when (has_made == "makes" ~ TRUE, has_made == "misses" ~ FALSE)) %>% mutate (has_won = case_when (visitor_pts > home_pts & team == "visit_team"~TRUE,
+                                                                                                                                                                                                                                                                                                                    TRUE~FALSE))
+
+
