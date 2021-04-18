@@ -1,4 +1,7 @@
+
+
 scrape_b_ref <- function(url,year_start,year_finish,is_playoff) {
+
   
   df_mid <-NULL
   df <- NULL
@@ -21,13 +24,19 @@ scrape_b_ref <- function(url,year_start,year_finish,is_playoff) {
           html_nodes("table > tbody > tr > td") %>% 
           html_text() 
         
+        
+        data_names  <- webpage_data %>%
+        html_nodes("table > tbody > tr > td") %>% html_attr("data-append-csv")
+        vec_names <- data_names[!is.na(data_names)]
+        
+        
         df<- as.data.frame(matrix(data,ncol = length(col_names)-1,byrow = TRUE),stringsAsFactors = FALSE)
-        df<-cbind(df,rep(i,nrow(df)))
+        df<-cbind(df,rep(i,nrow(df)),vec_names)
         df_mid <- rbind(df_mid,df) 
         }
 
       df_final <- df_mid %>% 
-     rename_at(vars(colnames(df_mid)),~c(col_names[-1],"year")) %>% mutate_at(col_names[!col_names %in% c("ranker","player","pos","team_id")],as.numeric) %>%  mutate_at ("player",as.character)
+     rename_at(vars(colnames(df_mid)),~c(col_names[-1],"year", "real_name")) %>% mutate_at(col_names[!col_names %in% c("ranker","player","pos","team_id","real_name")],as.numeric) %>%  mutate_at (c("player","real_name"),as.character)
       return(df_final)
             }
-  
+
