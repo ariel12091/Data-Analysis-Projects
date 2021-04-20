@@ -1,0 +1,20 @@
+#code for heatmap
+
+df_final_pbp_games  %>% select (adv, shot_type, time_minutes) %>%
+   group_by(time_minutes, adv, shot_type) %>% summarise(n = n()) %>% mutate (n_1 = ifelse(shot_type == "free throw",n*0.44,n*1), freq = n_1 / sum(n_1), max_freq = max(freq)) %>% 
+   filter(n_1 > 10) %>% select(time_minutes,adv,shot_type,freq) %>% filter (shot_type == "free throw",adv > -20 & adv < 20) %>% ungroup %>% mutate (is_clutch = case_when (between (adv, -5,5) & between (time_minutes, 43, 48) ~"Clutch Time")) %>%  
+   ggplot(aes(x = time_minutes, y = adv, fill = freq)) + geom_tile() + scale_fill_gradient2(midpoint = 0.3, low="blue", high="red", mid="white",limit = c(0,0.9)) + xlab("Minutes") + ylab ("Advantage") +
+   labs(title = "FT Shot Frequancy Based on Time and Score", color = "Percent of Total Shots") + scale_x_continuous(breaks = c(seq(0,48,6),53)) + scale_y_continuous(breaks = c(seq(-20,20,5)))
+
+#code for bar chart
+
+   df_final_pbp_games  %>% select (time_minutes, shot_type) %>%
+        group_by(time_minutes, shot_type) %>% summarise(n = n()) %>% 
+         mutate (n_1 = ifelse(shot_type == "free throw",n*0.44,n*1), freq = n_1 / sum(n_1)) %>% ungroup() %>% mutate (is_clutch = between(as.numeric(time_minutes),43,48)) %>%  #drop_na(is_leading) %>%
+     ggplot(aes(x = time_minutes, y = freq, fill = shot_type)) + geom_bar(stat = "identity",position = "stack") + scale_x_continuous(breaks = c(seq(0,48,6),53),"Minutes") + 
+   xlab("Minutes") + ylab ("Frequancy") + labs(title = "Shot Distribution by Minutes",subtitle = "PBP Data 2016-2019") + 
+      scale_fill_manual(breaks = c("2-pt","3-pt", "free throw"), values = c ("#999999", "#E69F00", "#56B4E9")) + theme_fivethirtyeight() + geom_rect(xmin = 43, xmax = 50, ymin = 0, ymax = 0.3, col = "black", fill = NA, size = 1)
+
+##logistic regression
+
+glm(formula = freq ~ comeback_win + (time_minutes * adv), family = "binomial", 
