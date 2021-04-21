@@ -37,11 +37,23 @@ Shot Distribution             |  Shot Making
 ### Analyzing whether comeback is impacted by defense or offense
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Comeback%20with%20Defense%20or%20Offense.R)
 
+Visualization:
+
 ![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Off%20and%20Def%20in%20Comeback.png)
 
 ### Testing differences between decades in NBA with Wilcoxon signed-rank test 
 
+[code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/wilcoxon.R)
+
+Visalization:
+
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/wilcoxon.png)
+
 ### Checking differnece between the past 7 years in margin of victory
+
+Visualization:
+
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/box%20plot%20margin.png)
 
 ## Just for fun
 
@@ -49,6 +61,10 @@ Shot Distribution             |  Shot Making
 
 ### Counting which initials (First name and last name) produce the most NBA player, and the best NBA players (total and per capita) (SQL)
 
+[code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/best%20initials.sql)
+
 ### Counting which duo of players have played in the most teams together  (SQL)
+
+[code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/duo%20different%20teams.sql)
 
 ### Counting wire-to-wire wins 
