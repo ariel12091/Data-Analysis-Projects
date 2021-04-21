@@ -55,6 +55,16 @@ Visualization:
 
 ![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/box%20plot%20margin.png)
 
+### Comet Plot 
+
+[code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Comet%20Plot.R)
+
+Visualization:
+
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/comet_plot_final.png)
+
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/comet_plot_trail.png)
+
 ## Just for fun
 
 ### Counting Buzzer beaters (end of game shots) per NBA team
