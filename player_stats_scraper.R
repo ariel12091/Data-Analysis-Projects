@@ -1,4 +1,7 @@
 
+library(rvest)
+library(dplyr)
+library(tidyverse)
 
 scrape_b_ref <- function(url,year_start,year_finish,is_playoff) {
 
