@@ -3,6 +3,9 @@ library(rvest)
 library(dplyr)
 library(tidyverse)
 
+#url - type of stat. accepts "totals", "advanced", "per poss", "per game"
+#is playoff - regular season or playoffs - accepts "leagues", "playoffs
+
 scrape_b_ref <- function(url,year_start,year_finish,is_playoff) {
 
   
