@@ -1,4 +1,4 @@
-reg_shot_dist <- df_final_pbp_games_2021 %>% filter (!between(adv, -5,5) & between(as.numeric(time_minutes),43,53)) %>% 
+reg_shot_dist <- df_final_pbp_games_2021 %>% filter (!(between(adv, -5,5) & between(as.numeric(time_minutes),43,53))) %>% 
    drop_na(shot_type) %>% group_by(team_offense, shot_type) %>% summarise(n = n()) %>% 
    mutate (n_1 = ifelse(shot_type == "free throw",n*0.44,n*1), freq = n_1 / sum(n_1))
 
