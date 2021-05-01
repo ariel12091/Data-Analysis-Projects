@@ -48,6 +48,7 @@ Visualization:
 ![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/plot_defense_offense.png)
 
 ### Testing differences between decades in NBA with Wilcoxon signed-rank test 
+Using the Wilcoxon signed-rank test in order to find out which player stats distribution has changed between decades. I have used the wilcoxon test because it is a-parmetric, and most of the stats distribution are unknown. 
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/wilcoxon.R)
 
@@ -55,13 +56,15 @@ Visalization:
 
 ![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/wilcoxon.png)
 
-### Checking differnece between the past 7 years in margin of victory
+### Checking difference between the past 7 years in margin of victory
+Box-plot indicating that the average margin of victory this year has drastically increased.
 
 Visualization:
 
 ![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/box%20plot%20margin.png)
 
 ### Comet Plot 
+Checking which team changes its strategy (shot distribution), in  final minutes of close games, and wether the decision is impacted by its position in the game (trailing/leading)
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Comet%20Plot.R)
 
