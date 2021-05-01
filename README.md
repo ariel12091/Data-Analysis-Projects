@@ -1,5 +1,5 @@
 # Data-Analysis-Projects
- Data analysis projects, mostly about the NBA. Using mostly R, some SQL. Visualization using ggplot2. Doing it for fun, self-learning and influence the discourse to a data-driven analysis
+ Data analysis projects, mostly about the NBA. Using mostly R, some SQL. Visualization using ggplot2. Doing it for fun, self-learning and changing the discourse to a data-driven analysis
  
  ## Scraping
  
@@ -15,6 +15,10 @@ Scraping and parsing data from Basketball-reference.com (using Rvest, tidyverse)
 ## Projects
 
 ### Analyzing effect of time and score on shot distribtion
+I have tested the hypothesis of the effect of time and score on shot distribution, thinking that teams tend to take riskier (/higer variance) shots under certein terms (when the game is getting out of hand). However, visual analysis of shot distribution per minute has not shown any results, nor did heatmap visualisation of time (x axis) against score (y axis). 
+I have also used logistic regression with time and score in order to estimate their impact (with interaction), but the coeffiecents were small.
+
+Instead, I have used the visulations to illustrate a different problem -  the very large share of free throws in the end of games, especially in the end of close games, which can really harm the viewing experience.
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Time%20and%20Score%20effect%20on%20shot%20distribution)
 
@@ -24,7 +28,8 @@ Bar Chart             |  Heatmap
 :-------------------------:|:-------------------------:
 ![](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/shot%20distribution%20over%20minutes.png)  |  ![](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/heatmap.png)
 
-### Analyzing if comeback (closing a large defecit) impacts shot distribtion
+### Analyzing if a comeback (closing a large defecit) impacts shot distribtion
+
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Comeback%20wins.R)
 
@@ -39,7 +44,7 @@ Shot Distribution             |  Shot Making
 
 Visualization:
 
-![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Off%20and%20Def%20in%20Comeback.png)
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/plot_defense_offense.png)
 
 ### Testing differences between decades in NBA with Wilcoxon signed-rank test 
 
