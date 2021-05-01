@@ -29,7 +29,7 @@ Bar Chart             |  Heatmap
 ![](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/shot%20distribution%20over%20minutes.png)  |  ![](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/heatmap.png)
 
 ### Analyzing if a comeback (closing a large defecit) impacts shot distribtion
-
+The regression mentioned above did indicate that a comeback win (a win after a large defecit), does have an impact on its team shot distribution. In order to further invesitigate it, I have compared the shot distribution of the losing team and the winning team in each the comeback wins of 2020-2021, during the comeback. As can be seen below, no difference in shot distribution, and a large difference in shot making. This indicates that in order to come back from a large defecit, a team does not need to change its strategy. It only needs to make more shots.
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Comeback%20wins.R)
 
@@ -40,6 +40,7 @@ Shot Distribution             |  Shot Making
 ![](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Shot%20Distribution%20Comeback.png)  |  ![](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Shot%20making%20Comeback.png)
 
 ### Analyzing whether comeback is impacted by defense or offense
+After publishing my findings above, I have received a follow-up question, asking whether the win is impacted more by strength of the defense or the offense. I have created a lolipop chart which details each game (ordered by offensive efficiency of winning team), and indicating if the offensive efficiency of the winning team is above the league average (dashed line), or if its defenseive efficiency. 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Comeback%20with%20Defense%20or%20Offense.R)
 
 Visualization:
