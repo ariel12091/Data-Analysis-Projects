@@ -1,5 +1,5 @@
 # Data-Analysis-Projects
- Data analysis projects, mostly about the NBA. Using mostly R, some SQL. Visualization using ggplot2. Doing it for fun, self-learning and changing the discourse to a data-driven analysis
+ Data analysis projects, mostly about the NBA. Using mostly R, some SQL. Visualization using ggplot2. Doing it for fun, self-learning and changing the discourse to a data-informed one.
  
  ## Scraping
  
