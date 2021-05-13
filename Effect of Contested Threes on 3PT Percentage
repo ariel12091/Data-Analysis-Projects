@@ -1,0 +1,99 @@
+##Data manipulation
+
+aa <- left_join(df_hustle,df_adv_nba,by = c("TEAM_ID", "TEAM_NAME")) %>% 
+  select(names(df_hustle)[-which(names(df_hustle) == "MIN")], "PACE","DEF_RATING") %>%
+  left_join(., df_opp, by = c("TEAM_ID", "TEAM_NAME")) %>% 
+  left_join(.,df_dict_nba_teams, by = c("TEAM_NAME" = "nameTeam")) %>% 
+  mutate(slugTeam = case_when(TEAM_NAME == "LA Clippers"~"LAC", TEAM_NAME == "Denver Nuggets"~ "DEN", TRUE~slugTeam)) %>% distinct(TEAM_NAME,.keep_all = TRUE) %>%
+  mutate (across(.cols = where(is.factor), as.character)) %>% mutate (across(.cols = c(3:72), as.numeric)) %>% mutate(deflections_per_100 = (DEFLECTIONS/PACE)*100) %>%
+  mutate (pct_three_contested = CONTESTED_SHOTS_3PT / OPP_FG3A, pct_two_contested = CONTESTED_SHOTS_2PT / (OPP_FGA - OPP_FG3A), freq_3pt = OPP_FG3A / OPP_FGA, OPP_EFG = (OPP_FGM+0.5*OPP_FG3M) / OPP_FGA) %>% 
+  select(TEAM_NAME, slugTeam, OPP_FG3M, OPP_FG3A, OPP_FG3_PCT, pct_three_contested, pct_two_contested, freq_3pt, OPP_EFG, DEF_RATING, deflections_per_100) %>% arrange(freq_3pt)
+
+#Plot
+
+  aa %>% ggplot(aes(x = pct_three_contested, y = OPP_FG3_PCT, label = slugTeam)) +geom_point() + geom_text_repel(size = 3.5) + theme_fivethirtyeight() + theme(title = element_text(size = 10), axis.title.x = element_text(margin = margin(15,0,0,0)), axis.title.y = element_text(margin = margin(0,15,0,0))) +
+  ylim(c(0.33,0.4)) + xlim(c(0.56, 0.68)) + scale_x_continuous(breaks = seq(0.56,0.68, 0.02)) + ylab(label = "Opponent 3PT Percentage") + xlab("Percentage of Contested 3PA Out of Total Threes") +
+  ggtitle(label = "Contested Threes effect on OPP 3PT Percent", subtitle = "r = 0.04" ) +
+  geom_hline(yintercept = means_aa[3]) +
+  geom_vline(xintercept = means_aa[4]) +
+  annotate(geom = "label", x = 0.57, y = 0.4, label = "Bad Defense\nBad Contest", fill = "white", label.size = NA, fontface = "bold") +
+  annotate(geom = "label", x = 0.57, y = 0.33, label = "Good Defense\nBad Contest", fill = "white", label.size = NA, fontface = "bold") +
+  annotate(geom = "label", x = 0.66, y = 0.33, label = "Good Defense\nGood Contest", fill = "white", label.size = NA, fontface = "bold") +
+  annotate(geom = "label", x = 0.66, y = 0.4, label = "Bad Defense\nGood Contest", fill = "white", label.size = NA, fontface = "bold") 
+  
+  
+  ##Scrape Data
+  
+  headers = c(
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `x-nba-stats-token` = 'true',
+  `X-NewRelic-ID` = 'VQECWF5UChAHUlNTBwgBVw==',
+  `User-Agent` = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.87 Safari/537.36',
+  `x-nba-stats-origin` = 'stats',
+  `Sec-Fetch-Site` = 'same-origin',
+  `Sec-Fetch-Mode` = 'cors',
+  `Referer` = 'https://stats.nba.com/stats/leaguehustlestatsteam/',
+  `Accept-Encoding` = 'gzip, deflate, br',
+  `Accept-Language` = 'en-US,en;q=0.9'
+)
+
+
+url <- "https://stats.nba.com/stats/leaguehustlestatsteam?College=&Conference=&Country=&DateFrom=&DateTo=&Division=&DraftPick=&DraftYear=&Height=&LeagueID=&Location=&Month=&OpponentTeamID=&Outcome=&PORound=&PerMode=PerGame&PlayerExperience=&PlayerPosition=&Season=2020-21&SeasonSegment=&SeasonType=Regular+Season&TeamID=&VsConference=&VsDivision=&Weight="
+
+res <- httr::GET(url, httr::add_headers(.headers = headers))
+json_resp <- jsonlite::fromJSON(content(res, "text"))
+df <- data.frame(json_resp$resultSets$rowSet[1])
+colnames(df) <- json_resp[["resultSets"]][["headers"]][[1]]
+
+df_hustle <- df
+
+
+headers = c(
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `x-nba-stats-token` = 'true',
+  `X-NewRelic-ID` = 'VQECWF5UChAHUlNTBwgBVw==',
+  `User-Agent` = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.87 Safari/537.36',
+  `x-nba-stats-origin` = 'stats',
+  `Sec-Fetch-Site` = 'same-origin',
+  `Sec-Fetch-Mode` = 'cors',
+  `Referer` = 'https://stats.nba.com/stats/leaguedashteamstats/',
+  `Accept-Encoding` = 'gzip, deflate, br',
+  `Accept-Language` = 'en-US,en;q=0.9'
+)
+
+url <- "https://stats.nba.com/stats/leaguedashteamstats?Conference=&DateFrom=&DateTo=&Division=&GameScope=&GameSegment=&LastNGames=0&LeagueID=&Location=&MeasureType=Opponent&Month=0&OpponentTeamID=0&Outcome=&PORound=&PaceAdjust=N&PerMode=PerGame&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season=2020-21&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID=&TwoWay=&VsConference=&VsDivision="
+
+
+res <- httr::GET(url, httr::add_headers(.headers = headers))
+json_resp <- jsonlite::fromJSON(content(res, "text"))
+df <- data.frame(json_resp$resultSets$rowSet[1])
+colnames(df) <- json_resp[["resultSets"]][["headers"]][[1]]
+
+df_opp <- df
+
+
+headers = c(
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `x-nba-stats-token` = 'true',
+  `X-NewRelic-ID` = 'VQECWF5UChAHUlNTBwgBVw==',
+  `User-Agent` = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.87 Safari/537.36',
+  `x-nba-stats-origin` = 'stats',
+  `Sec-Fetch-Site` = 'same-origin',
+  `Sec-Fetch-Mode` = 'cors',
+  `Referer` = 'https://stats.nba.com/stats/leaguedashteamstats/',
+  `Accept-Encoding` = 'gzip, deflate, br',
+  `Accept-Language` = 'en-US,en;q=0.9'
+)
+
+url <- "https://stats.nba.com/stats/leaguedashteamstats?Conference=&DateFrom=&DateTo=&Division=&GameScope=&GameSegment=&LastNGames=0&LeagueID=&Location=&MeasureType=Advanced&Month=0&OpponentTeamID=0&Outcome=&PORound=&PaceAdjust=N&PerMode=Totals&Period=0&PlayerExperience=&PlayerPosition=&PlusMinus=N&Rank=N&Season=2020-21&SeasonSegment=&SeasonType=Regular+Season&ShotClockRange=&StarterBench=&TeamID=&TwoWay=&VsConference=&VsDivision="
+
+
+res <- httr::GET(url, httr::add_headers(.headers = headers))
+json_resp <- jsonlite::fromJSON(content(res, "text"))
+df <- data.frame(json_resp$resultSets$rowSet[1])
+colnames(df) <- json_resp[["resultSets"]][["headers"]][[1]]
+
+df_adv_nba <- df
