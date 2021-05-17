@@ -12,6 +12,9 @@ Scraping and parsing play by play data (text) to tabular data (using Rvest, tidy
 ### Basketball-reference Player stats scarper
 Scraping and parsing data from Basketball-reference.com (using Rvest, tidyverse) [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/player_stats_scraper.R)
 
+### Stats.nba.com Scraper
+Scraping data from stats.nba.com (using httr, stringr) [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/stats_nba_com_scraper.R)
+
 ## Projects
 
 ### Analyzing effect of time and score on shot distribtion
