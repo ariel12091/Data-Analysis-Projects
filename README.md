@@ -77,6 +77,13 @@ Visualization:
 
 ![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/comet_plot_trail.png)
 
+### What's the effect of guarding shots in game?
+[code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Effect%20of%20Contested%20Threes%20on%203PT%20Percentage)
+
+Visualiation:
+
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/Effect%20plot%20opp%203pt.png)
+
 ## Just for fun
 
 ### Counting Buzzer beaters (end of game shots) per NBA team
