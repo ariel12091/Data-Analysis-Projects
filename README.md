@@ -96,7 +96,7 @@ Visualiation:
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/duo%20different%20teams.sql)
 
-### Who's the worst teams on a Sunday Afternoon
+### Is the Boston Celtics is the worst team on a Sunday Afternoon?
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/sunday_wining_pct.R)
 
