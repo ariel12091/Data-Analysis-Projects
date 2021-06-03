@@ -96,4 +96,12 @@ Visualiation:
 
 [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/duo%20different%20teams.sql)
 
+### Who's the worst teams on a Sunday Afternoon
+
+[code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/sunday_wining_pct.R)
+
+visualization:
+
+![alt text](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/sunday%20tbale.png)
+
 ### Counting wire-to-wire wins 
