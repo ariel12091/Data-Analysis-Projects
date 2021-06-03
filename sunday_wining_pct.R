@@ -3,9 +3,7 @@ df_visit <- df_games %>% mutate (has_won = visit_won) %>% rename(team = visitor_
 
 df_home <- df_games  %>% mutate (has_won = !visit_won) %>% rename(team = home_team_name, pts = home_pts, opp_pts = visitor_pts, opp_team = visitor_team_name)
 
-df_untied <- rbind(df_visit, df_home) %>% select(-visit_won) %>% mutate (adv = abs(pts - opp_pts)) %>% mutate(year = substr(game_id, 1,4), month = substr(game_id,5,6), day = substr(game_id,7,8)) %>% 
-  mutate(league_year = case_when(month %in% c("10","11","12")~paste(year,as.numeric(year)+1,sep = "-"),
-                                 month %in% c("01","02","03","04","05")~paste(as.numeric(year)-1,year,sep = "-"))) %>% drop_na()
+df_untied <- rbind(df_visit, df_home) %>% select(-visit_won) %>% mutate (adv = abs(pts - opp_pts)) 
 
 library(lubridate)
 
