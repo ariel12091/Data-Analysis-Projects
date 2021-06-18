@@ -19,7 +19,7 @@ Scraping data from stats.nba.com (using httr, stringr) [code](https://github.com
 
 ### Analyzing effect of time and score on shot distribtion
 I have tested the hypothesis of the effect of time and score on shot distribution, thinking that teams tend to take riskier (/higer variance) shots under certein terms (when the game is getting out of hand). However, visual analysis of shot distribution per minute has not shown any results, nor did heatmap visualisation of time (x axis) against score (y axis). 
-I have also used logistic regression with time and score in order to estimate their impact (with interaction), but the coeffiecents were small.
+I have also used regression with time and score in order to estimate their impact (with interaction), but the coeffiecents were small.
 
 Instead, I have used the visulations to illustrate a different problem -  the very large share of free throws in the end of games, especially in the end of close games, which can really harm the viewing experience.
 
