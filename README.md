@@ -15,6 +15,9 @@ Scraping and parsing data from Basketball-reference.com (using Rvest, tidyverse)
 ### Stats.nba.com Scraper
 Scraping data from stats.nba.com (using httr, stringr) [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/stats_nba_com_scraper.R)
 
+### ESPN ID Scraper
+Matching ID to each player (using Rvest) [code](https://github.com/ariel12091/Data-Analysis-Projects/blob/main/ESPN%20ID%20Scraper.R)
+
 ## Projects
 
 ### Analyzing effect of time and score on shot distribtion
