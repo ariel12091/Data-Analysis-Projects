@@ -18,7 +18,7 @@ scrape_b_ref <- function(url,year_start,year_finish,is_playoff) {
   col_names <- webpage_col %>% 
     html_nodes("table > thead > tr > th") %>% 
     html_attr("data-stat")
-    col_names <- replace(col_names,which(col_names < 0),"empty")
+    col_names<-replace(col_names, which(col_names == "DUMMY"), paste(col_names[which(col_names == "DUMMY")],which(col_names == "DUMMY")))
   
   
       for (i in year_start:year_finish)
