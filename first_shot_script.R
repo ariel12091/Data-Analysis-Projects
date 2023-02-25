@@ -128,9 +128,6 @@ pbp %>%
   arrange(diff_start_finish) %>%
   filter(team_id=="17") %>%
   view()
-  view()
-
-
 
 
 legend_teams <- pbp %>%
