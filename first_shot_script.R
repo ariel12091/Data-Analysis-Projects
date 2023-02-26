@@ -1,6 +1,8 @@
 library(hoopR)
 library(rvest)
 library(tidyverse)
+library(crul)
+
 
 hoopR::nba_pbp()
 
@@ -16,20 +18,6 @@ links_teams <- read_html("https://www.espn.com/nba/stats/player") %>%
 links_teams_final <- paste("https://www.espn.com", 
                            links_teams[which(str_length(links_teams) > 1)],
                            sep = "")
-
-
-
-
-
-install.packages("installr")
-
-library(installr)
-
-pbp %>%
-  distinct(type_abbreviation, type_id, type_text) %>%
-  filter(str_detect(type_text, regex("time",ignore_case = TRUE)))
-
-library(crul)
 
 teams_respons <- crul::Async$new(urls = links_teams_final)$get()
   
