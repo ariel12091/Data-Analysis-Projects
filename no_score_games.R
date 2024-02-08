@@ -1,4 +1,11 @@
 
+progressr::with_progress({
+  nba_pbp <- hoopR::load_nba_pbp(seasons = c(2008:2024))
+})
+
+
+
+
 test <- nba_pbp %>%
   filter(qtr <= 4) %>%
   group_by(game_id, season, season_type) %>%
@@ -23,6 +30,7 @@ test <- nba_pbp %>%
     mutate(rank_time = dense_rank(desc(time_no_score))) %>%
     view()
   
+
   check %>%
     filter(season_type == 3) %>%
     view()
