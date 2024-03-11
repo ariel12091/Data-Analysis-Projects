@@ -4,7 +4,7 @@ library(tidyverse)
 library("hoopR")
 
 future::plan("multisession")
-pbp1 <- hoopR::load_nba_pbp(seasons = c(2002:2023))
+pbp1 <- hoopR::load_nba_pbp(seasons = c(2024))
 
 
 
@@ -12,11 +12,12 @@ list_gamed_ids <- pbp %>%
   distinct(game_id) %>%
   pull()
 
-all_box_score <- load_nba_player_box(seasons = c(2002:2023))
+all_box_score <- load_nba_player_box(seasons = c(2024))
 
   trip_dub_pbp <- all_box_score %>%
-  filter(as.numeric(pts) >= 10 & as.numeric(reb) == 10 & as.numeric(ast) >=10) %>%
-  inner_join(pbp1, by = c("athlete_id" = "participants_0_athlete_id", "game_id")) %>%
+  filter(as.numeric(points) >= 10 & as.numeric(rebounds) == 10 &
+           as.numeric(assists) >=10) %>%
+  inner_join(pbp1, by = c("athlete_id" = "athlete_id_1", "game_id")) %>%
   filter(type_id %in% c('155', '156')) %>%
   group_by(athlete_id, game_id) %>%
   mutate(num_reb = row_number()) %>%
@@ -36,7 +37,8 @@ all_box_score <- load_nba_player_box(seasons = c(2002:2023))
   ungroup() %>%
   filter(under_minute == TRUE) %>%
   inner_join(all_box_score %>%
-               filter(as.numeric(pts) >= 10 & as.numeric(reb) >=10 & as.numeric(ast) >= 10) %>%
+               filter(as.numeric(points) >= 10 & as.numeric(rebounds) >=10 &
+                        as.numeric(assists) >= 10) %>%
                group_by(athlete_id, athlete_display_name) %>%
                summarise(n_total_trips = n_distinct(game_id)) %>%
                ungroup() %>%
