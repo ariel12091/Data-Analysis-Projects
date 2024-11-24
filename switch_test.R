@@ -63,19 +63,115 @@ matchup_join_bio <-
   mutate(across(-c(year, OFF_PLAYER_NAME, DEF_PLAYER_NAME, MATCHUP_MIN, PLAYER_NAME.x, PLAYER_NAME.y,
                    PLAYER_HEIGHT.x, PLAYER_HEIGHT.y, TEAM_ABBREVIATION.x, TEAM_ABBREVIATION.y),~as.numeric(.x))) %>%
   
-  p1 %>%
-  filter(year == "2023-24") %>%
+p1 %>%
+  filter(str_detect(OFF_PLAYER_NAME, "Deni")) %>%
+  select(OFF_PLAYER_ID)
+  filter(OFF_PLAYER_ID == 1641705) %>%
+  arrange(desc(PLAYER_HEIGHT_INCHES.y)) %>%
+  view()
+  
+box_player <- hoopR::load_nba_player_box(seasons = c(2003:2024))
+
+  
+box_player %>%
+  filter(athlete_id == 3112335, opponent_team_id == 27) %>%
+  mutate(fg_pct = field_goals_made / field_goals_attempted) %>%
+  relocate(fg_pct, .after = field_goals_attempted) %>%
+  arrange(desc(game_date)) %>%
+  view()
+
+
+library(zoo)
+
+rollmean()
+
+roll_avg_players <- box_player %>%
+  group_by(athlete_id, athlete_display_name, opponent_team_id, opponent_team_name) %>%
+  #filter(athlete_id == 1966, opponent_team_id == 30) %>%
+  arrange(game_date) %>%
+  filter(!is.na(points)) %>%
+  mutate(roll_mean_points = zoo::rollmean(points, 6, fill = NA, align = 'right'),
+         roll_mean_reb = zoo::rollmean(rebounds, 6, fill = NA, align = 'right'),
+         roll_mean_ast = zoo::rollmean(assists, 6, fill = NA, align = 'right'),
+         roll_mean_fga = zoo::rollmean(field_goals_attempted, 6, fill = NA, align = 'right'),
+         roll_mean_fgm = zoo::rollmean(field_goals_made, 6, fill = NA, align = 'right')) %>%
+  select(game_id, game_date, season, athlete_id, athlete_display_name,
+         opponent_team_id, opponent_team_name,
+         points, contains("roll_mean")) %>%
+  mutate(roll_mean_pct = roll_mean_fgm / roll_mean_fga) %>%
+
+roll_avg_players %>%
+  filter(str_detect(athlete_display_name, "Jokic"),
+         opponent_team_id == 27) %>%
+  view()
+  
+  
+roll_avg_players %>%
+  mutate(max_pct = max(roll_mean_pct, na.rm = TRUE)) %>%
+  filter(roll_mean_pct == max_pct) %>%
+  ungroup() %>%
+  filter(roll_mean_points >= 28) %>%
+  relocate(roll_mean_pct, .after = roll_mean_points) %>%
+  arrange(desc(roll_mean_pct)) %>%
+  view()
+  
+
+rollmean()
+  
+na.fill()
+
+
+box_player %>%
+  filter(season == 2024, athlete_id == 3945274) %>%
+  left_join(box_player %>% 
+              filter(athlete_id == 6442) %>%
+              select(game_id, minutes, points),
+            by = c("game_id")) %>%
+  select(minutes.x , minutes.y, team_winner) %>%
+  group_by(is.na(minutes.y), team_winner) %>%
+  summarise(mean_minutes = mean(minutes.x))
+  
+  filter(str_detect(athlete_display_name,fixed("jokic", ignore_case = TRUE))) %>%
+  distinct(athlete_display_name, athlete_id)
+
+library(tidyverse)
+
+p1 %>%
+  #filter(year == "2023-24") %>%
   mutate(height_diff = PLAYER_HEIGHT_INCHES.x - PLAYER_HEIGHT_INCHES.y) %>%
   mutate(height_bin = cut(PLAYER_HEIGHT_INCHES.x, breaks = seq(67, 92, 5))) %>%
-  mutate(is_diff_up = height_diff >= 5,
-         is_diff_down = height_diff <= -5) %>%
+  mutate(type_diff = case_when(height_diff >= 3~"up",
+         height_diff < 3 & height_diff > -3~"same",
+        height_diff <= -3~"down")) %>%
+  filter(MATCHUP_BLK > 0) %>%
+  arrange(desc(height_diff)) %>%
+  relocate(c(year, height_diff), .after = SEASON_ID) %>%
+  view()
   group_by(TEAM_ID.x, TEAM_ABBREVIATION.x,
-    year, height_bin, OFF_PLAYER_ID, OFF_PLAYER_NAME, is_diff_down) %>%
-  summarise(across(.cols = c(6:19, 24:25),
+      year, height_bin, OFF_PLAYER_ID, OFF_PLAYER_NAME,
+      DEF_PLAYER_ID, DEF_PLAYER_NAME, type_diff) %>%
+  #group_by(TEAM_ID.y, TEAM_ABBREVIATION.y,
+  #         year, height_bin, DEF_PLAYER_ID, DEF_PLAYER_NAME, type_diff) %>%
+  filter(type_diff == "up") %>%
+  summarise(total_blocks = sum(MATCHUP_BLK),
+            total_poss = sum(PARTIAL_POSS)) %>%
+  mutate(blocks_per_poss = total_blocks / total_poss) %>%
+  arrange(desc(total_blocks)) %>%
+  filter(total_poss >= 30) %>%
+  ungroup() %>%
+  mutate(rank_blk = dense_rank(desc(blocks_per_poss))) %>%
+  #filter(str_detect(OFF_PLAYER_NAME, "Vucevic")) %>%
+  view("blk_up_poss")
+  
+  colnames()
+#  group_by(TEAM_ID.x, TEAM_ABBREVIATION.x,
+#    year, height_bin, OFF_PLAYER_ID, OFF_PLAYER_NAME, type_diff) %>%
+  group_by(TEAM_ID.x, TEAM_ABBREVIATION.x,
+           year, type_diff) %>%
+  summarise(across(.cols = all_of(vec_sum),
                        .fns = sum,
                        .names = "sum_{.col}")) %>%
   select(-contains("PCT")) %>%
-  filter(sum_PARTIAL_POSS >= 150) %>%
   mutate(sum_MATCHUP_FG2A = sum_MATCHUP_FGA - sum_MATCHUP_FG3A,
          sum_MATCHUP_FG2M = sum_MATCHUP_FGM - sum_MATCHUP_FG3M) %>%
   mutate(matchup_fg_pct = sum_MATCHUP_FGM / sum_MATCHUP_FGA,
@@ -83,10 +179,26 @@ matchup_join_bio <-
          matchup_3pt_pct = sum_MATCHUP_FG3M / sum_MATCHUP_FG3A,
          pts_per_poss_player = sum_PLAYER_PTS/ sum_PARTIAL_POSS,
          pts_per_poss_team = sum_TEAM_PTS / sum_PARTIAL_POSS, 
+         shot_freq = sum_MATCHUP_FGA / sum_PARTIAL_POSS,
          freq = sum_PARTIAL_POSS / sum(sum_PARTIAL_POSS)) %>%
   ungroup() %>%
-  filter(is_diff_down == TRUE) %>%
-  arrange(desc(matchup_fg_pct)) %>%
+  filter(type_diff == "up") %>%
+  group_by(TEAM_ID.x) %>%
+  mutate(diff_freq = freq - lag(freq, order_by = year)) %>%
+  janitor::clean_names() %>%
+  filter(year == "2023-24") %>%
+  ungroup() %>%
+  view()
+  select(-off_player_id)
+  filter(off_player_id == "1630166") %>%
+  view()
+  filter(year == "2023-24", sum_PARTIAL_POSS >= 500) %>%
+  arrange(desc(diff_freq)) %>%
+  view()
+  ggplot(aes(y = pts_per_poss_player, x = height_diff)) + 
+  geom_line()
+
+
   #filter(TEAM_ID.x == 1610612750, year == "2023-24") %>%
   arrange(desc(freq)) %>%
   slice_max(order_by = freq, n = 100) %>%
