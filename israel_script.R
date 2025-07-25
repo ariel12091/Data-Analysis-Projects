@@ -1,11 +1,24 @@
 pbp_israel <- jsonlite::read_json("https://stats.segevstats.com/realtimestat_heb/get_team_action.php?game_id=62428",simplifyVector = TRUE)
 
-pbp_israel2 <- jsonlite::read_json("https://stats.segevstats.com/realtimestat_heb/get_team_action.php?game_id=62426", simplifyVector = TRUE)
+pbp_israel2 <- jsonlite::read_json("https://stats.segevstats.com/realtimestat_heb/get_team_action.php?game_id=62426", simplifyVector = TRUE) %>%
+  
+json_data <- jsonlite::read_json("https://basket.co.il/pbp/json/games_all.json?1753473308320") 
+
+israel_schedule <- map(json_data[[1]]$games, ~as.data.frame(.x)) %>%
+  list_rbind()
 
 
+
+library(jsonlite)
+
+
+map(pbp_israel$result$gameInfo$awayTeam, as.data.frame)  
+  
+jsonlite::read_json(pbp_israel$result$gameInfo$awayTeam)  
 
 pbp_israel$result$actions %>%
   unnest(parameters, names_repair = "universal") %>%
+  
   janitor::clean_names() %>%
   filter(type_26 != "clock") %>%
   mutate(pct_ft = free_throw_number / free_throws_awarded) %>%
@@ -29,11 +42,9 @@ pbp_israel$result$actions %>%
   summarise(total_poss = as.numeric(sum(final_end_poss, na.rm = TRUE)),
             total_pts = sum(team_score, na.rm = TRUE)) %>%
   mutate(pts_per_poss = round((total_pts / total_poss) * 100,1)) 
-                              
+            
 
-?unnest
-
-pbp_israel2$result$actions %>%
+pbp_israel$result$actions %>%
   unnest(parameters, names_sep = "_") %>%
   janitor::clean_names() %>%
   filter(type != "clock") %>%
@@ -48,16 +59,15 @@ pbp_israel2$result$actions %>%
   mutate(sum_poss_poss = sum(end_poss, na.rm = TRUE),
          sum_block = sum(parameters_made=="blocked", na.rm = TRUE),
          sum_tech = sum(parameters_type == "technical", na.rm = TRUE)) %>%
-  mutate(final_end_poss = case_when(sum_poss_poss >=2 & id == parent_action_id~NA_real_,
+  mutate(final_end_poss = case_when(sum_poss_poss >=2 & id == parent_action_id~NA,
                                     sum_block >= 1~lead(end_poss),
-                                    sum_tech >= 1 ~ NA_real_,
+                                    sum_tech >= 1 ~ NA,
                                     TRUE~end_poss)) %>%
   ungroup() %>%
   mutate(parameters_points = case_when(parameters_made == "made" & type == "freeThrow" ~ 1, 
                             TRUE~parameters_points)) %>%
   group_by(team_id) %>%
   mutate(team_score = case_when(parameters_made=="made"~parameters_points)) %>%
-  view()
   summarise(total_poss = as.numeric(sum(final_end_poss, na.rm = TRUE)),
             total_pts = sum(team_score, na.rm = TRUE)) %>%
   mutate(pts_per_poss = round((total_pts / total_poss) * 100,1)) %>%
@@ -65,6 +75,38 @@ pbp_israel2$result$actions %>%
 
 
 
+
+all_players_in_game %>%
+  cross_join(pbp_israel$result$actions %>%
+  unnest(parameters, names_sep = "_") %>%
+  janitor::clean_names() %>%
+  filter(type != "clock") %>%
+  filter(type == "substitution") %>%
+  mutate(parameters_player_in = if_else(!is.na(parameters_player_in), player_id, NA), 
+         parameters_player_out = if_else(!is.na(parameters_player_out), player_id, NA))) %>%
+  filter(team_id.x == team_id.y) %>%
+  mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
+                           player_id.x == parameters_player_out~FALSE)) %>%
+  arrange(quarter, desc(quarter_time), parameters_player_out) %>%
+  group_by(player_id.x) %>%
+  fill(is_on, .direction = "down") %>%
+  ungroup() %>%
+  group_by(quarter, quarter_time, player_id.x,team_id.x) %>%
+  summarise(is_on_verdict = sum(is_on, na.rm = TRUE)) %>%
+  ungroup() %>%
+  pivot_wider(id_cols = c(quarter, quarter_time, team_id.x), names_from = player_id.x,
+              values_from = is_on_verdict) %>%
+  arrange(quarter, desc(quarter_time)) %>%
+  replace(is.na(.), 0) %>%
+  mutate(across(.cols = matches("\\d"), ~.x > 0)) %>%
+  mutate(row_sum = rowSums(across(.cols = matches("\\d")))) %>%
+  view()
+  
+  
+  relocate(player_id, .after = parameters_player_out) %>%
+  pivot_wider(id_cols = c(quarter_time), names_from = "player_id",names_prefix = "player_", values_from = player_id) %>% 
+  view()
+ 
 
 options(digits = 4)
                               
