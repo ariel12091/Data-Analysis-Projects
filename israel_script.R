@@ -75,32 +75,70 @@ pbp_israel$result$actions %>%
 
 
 
+substiution_data %>%
+  view()
+  group_by(parameters_player_in, lead_change = lead(parameters_player_out), quarter_time,quarter) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  filter(parameters_player_in == lead_change)
+
 
 all_players_in_game %>%
-  cross_join(pbp_israel$result$actions %>%
+  cross_join(substiution_data) %>%
+  filter(team_id.x == team_id.y) %>%
+  mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
+                           player_id.x == parameters_player_out~FALSE,
+                           TRUE~NA)) %>%
+  arrange(quarter, desc(quarter_time), user_time) %>%
+  group_by(player_id.x) %>%
+  fill(is_on, .direction = "down") %>%
+  ungroup() %>%
+  group_by(quarter, quarter_time, player_id.x,team_id.x) %>%
+  summarise(is_on_verdict = last(is_on)) %>%
+  pivot_wider(id_cols = c(quarter, quarter_time, team_id.x), names_from = player_id.x,
+              values_from = is_on_verdict) %>%
+  arrange(quarter, desc(quarter_time)) %>%
+  replace(is.na(.), 0) %>%
+  #mutate(across(.cols = matches("\\d"), ~ replace(.x, is.infinite(.x), 0))) %>%
+  mutate(across(.cols = matches("\\d"), ~.x > 0)) %>%
+  mutate(row_sum = rowSums(across(.cols = matches("\\d")))) %>%
+  view()
+
+
+df_test_pivot <- df_test %>%
+  pivot_longer(-c(quarter, quarter_time, team_id.x))
+
+
+?is.infinite
+  
+df_test_pivot %>%
+  inner_join(df_test_pivot, by = c("name", "team_id.x")) %>%
+  filter(quarter_time.x == "00:50", quarter_time.x != quarter_time.y) %>%
+  mutate(change_value = value.x != value.y,) %>%
+  relocate(value.y, .after = value.x) %>%
+  view()
+
+cbind(pbp_israel$result$gameInfo$homeTeam$players, pbp_israel$result$gameInfo$homeTeam$id
+
+all_players_in_game <- pbp_israel$result$actions %>%
+  unnest(parameters, names_sep = "_") %>%
+  janitor::clean_names() %>%
+  filter(type != "clock") %>%
+  filter(type == "substitution") %>%
+  distinct(player_id, team_id) %>%
+  mutate(is_on = FALSE)
+  
+
+substiution_data <- pbp_israel$result$actions %>%
   unnest(parameters, names_sep = "_") %>%
   janitor::clean_names() %>%
   filter(type != "clock") %>%
   filter(type == "substitution") %>%
   mutate(parameters_player_in = if_else(!is.na(parameters_player_in), player_id, NA), 
-         parameters_player_out = if_else(!is.na(parameters_player_out), player_id, NA))) %>%
-  filter(team_id.x == team_id.y) %>%
-  mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
-                           player_id.x == parameters_player_out~FALSE)) %>%
-  arrange(quarter, desc(quarter_time), parameters_player_out) %>%
-  group_by(player_id.x) %>%
-  fill(is_on, .direction = "down") %>%
-  ungroup() %>%
-  group_by(quarter, quarter_time, player_id.x,team_id.x) %>%
-  summarise(is_on_verdict = sum(is_on, na.rm = TRUE)) %>%
-  ungroup() %>%
-  pivot_wider(id_cols = c(quarter, quarter_time, team_id.x), names_from = player_id.x,
-              values_from = is_on_verdict) %>%
-  arrange(quarter, desc(quarter_time)) %>%
-  replace(is.na(.), 0) %>%
-  mutate(across(.cols = matches("\\d"), ~.x > 0)) %>%
-  mutate(row_sum = rowSums(across(.cols = matches("\\d")))) %>%
-  view()
+         parameters_player_out = if_else(!is.na(parameters_player_out), player_id, NA))
+
+
+
+
   
   
   relocate(player_id, .after = parameters_player_out) %>%
