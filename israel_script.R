@@ -87,6 +87,12 @@ json_resp <- future_map(links, ~jsonlite::read_json(.x, simplifyVector = TRUE))
 
 
 
+json_box <- jsonlite::read_json("https://stats.segevstats.com/realtimestat_heb/get_team_score.php?game_id=62428", simplifyVector = TRUE)
+
+links_box <- glue::glue("https://stats.segevstats.com/realtimestat_heb/get_team_score.php?game_id={israel_schdule_clean_links$ExternalID}")
+
+links_box <- glue::glue("")
+
 links <- glue::glue("https://stats.segevstats.com/realtimestat_heb/get_team_action.php?game_id={israel_schdule_clean_links$ExternalID}")
 
 jsonlite::read_json("https://stats.segevstats.com/realtimestat_heb/gameStats.php?game_id=62428&lang=he")  
@@ -101,9 +107,21 @@ df_list <- map(json_resp, ~list(colnames(.x$result$actions %>% unnest(parameters
                               .x$result$gameInfo$gameId))
 
 
+json_box <- future_map(links_box, ~jsonlite::read_json(.x, simplifyVector = TRUE))
+  
+json_box[[1]]$result$boxscore$homeTeam
 
-  
-  
+
+
+
+
+json_box[[1]]$result$boxscore$homeTeam$players %>%
+  mutate(json_box[[1]]$result$boxscore$gameInfo$homeTeamId,)
+
+
+json_box[[1]]$result$boxscore$gameInfo$homeTeamId
+
+
 json_resp[[1]]$
 
 #initial clean
@@ -173,11 +191,16 @@ compute(players_data_with_games,
 
 dbWriteTable(con, "full_rosters", players_data_with_games)
 
+dbGetQuery(con,
+           "SHOW INDEX")
 
 
+json_box$result$boxscore$homeTeam$players
+
+  json_box$result$boxscore$awayTeam$players
 
 dbGetQuery(con, "SELECT *
-           FROM possessions")
+           FROM stints")
 
 
 DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_poss_gtt ON possessions(game_id, team_id, end_game_seconds_remaining);")
@@ -379,12 +402,96 @@ DBI::dbGetQuery(con, "show tables")
   full_rosters %>%
     filter(player_id == "19461")
 
-actions %>%
-  group_by(game_id) %>%
-  summarise(n = n_distinct(user_time), .groups = "drop") %>%
-  filter(n < 400) %>%
-  arrange(desc(n))
+
+
+dbGetQuery(con, "SELECT *
+           FROM pws") %>%
+  view()
   
+test_r <- full_rosters %>%
+  collect() %>%
+  mutate(team_id = as.integer(team_id)) %>%
+  distinct(player_id, game_id, team_id) %>%
+  inner_join(subs %>% collect(), by = c("team_id", "game_id")) %>%
+  #filter(team_id.x == team_id.y) %>%
+  mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
+                           player_id.x == parameters_player_out~FALSE,
+                           TRUE~NA)) %>%
+  #mutate(str_change = !is.na(is_on)) %>%
+  filter(game_id == "62428") %>%
+  group_by(game_id, player_id.x) %>%
+  arrange(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
+  fill(is_on, .direction = "down") %>%
+  ungroup() %>%
+  filter(player_id.x == "2081") %>%
+  filter(end_game_seconds_remaining == 600) %>%
+  group_by(game_id, quarter, quarter_time, end_game_seconds_remaining,
+           end_quarter_seconds_remaining, player_id.x,team_id) %>%
+  summarise(is_on_verdict = last(is_on), .groups = "drop") %>%
+  filter(player_id.x == 2081) %>%
+  view()
+
+dbGetQuery(con, "SHOW TABLES")  
+
+full_rosters %>%
+  filter(player_id == "2543") %>%
+  view()
+
+
+df_lineups <- full_rosters %>%
+  mutate(team_id = as.integer(team_id)) %>%
+  distinct(player_id, game_id, team_id) %>%
+  mutate(is_on = FALSE) %>%
+  inner_join(subs, by = c("team_id", "game_id")) %>%
+  #filter(team_id.x == team_id.y) %>%
+  mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
+                           player_id.x == parameters_player_out~FALSE,
+                           TRUE~NA)) %>%
+  group_by(game_id, player_id.x) %>%
+  dbplyr::window_order(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
+  fill(is_on, .direction = "down") %>%
+  ungroup() %>%
+  mutate(.ord = row_number()) %>%
+  slice_max(
+    order_by = .ord, n = 1, with_ties = FALSE,
+    by = c(game_id, quarter, quarter_time, end_game_seconds_remaining,
+           end_quarter_seconds_remaining, player_id.x, team_id)
+  ) %>%
+  select (game_id, player_id = player_id.x, team_id,
+            quarter, quarter_time, end_game_seconds_remaining,
+            end_quarter_seconds_remaining,
+            is_on_verdict = is_on) %>%
+  group_by(player_id, game_id, quarter, quarter_time, end_game_seconds_remaining,
+           end_quarter_seconds_remaining,
+           team_id, is_on_verdict) %>%
+
+  #dbplyr::window_order(desc(end_game_seconds_remaining), quarter, quarter_time, team_id, player_id) %>%
+  mutate(
+    lineup_id = dbplyr::sql("
+    string_agg(
+      DISTINCT CASE WHEN is_on_verdict IS TRUE THEN CAST(player_id AS VARCHAR) END,
+      '_' ORDER BY CAST(player_id AS BIGINT)
+    )
+    OVER (
+      PARTITION BY game_id, team_id, quarter, end_game_seconds_remaining
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    )
+  "),
+    n_on = dbplyr::sql("
+    sum(CASE WHEN is_on_verdict IS TRUE THEN 1 ELSE 0 END)
+    OVER (PARTITION BY game_id, team_id, quarter, end_game_seconds_remaining)
+  ")) %>% 
+  ungroup() %>%
+  mutate(lineup_hash = dbplyr::sql("md5(lineup_id)")) %>%
+  filter(game_id == 62447, quarter == 4) %>%
+  view()
+
+df_lineups %>%
+  filter(game_id == 62452, end_game_seconds_remaining <= 600, team_id == 11) %>%
+  arrange(desc(end_game_seconds_remaining)) %>%
+  view()
+  filter(is.na(lineup_hash)) %>%
+  view()
 
 
 
@@ -410,27 +517,41 @@ tictoc::tic("step 1")
     mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
                              player_id.x == parameters_player_out~FALSE,
                              TRUE~NA)) %>%
+    #mutate(str_change = !is.na(is_on)) %>%
     filter(game_id == "62428") %>%
     group_by(game_id, player_id.x) %>%
     dbplyr::window_order(quarter, desc(end_game_seconds_remaining), user_time) %>%
     fill(is_on, .direction = "down") %>%
-    filter(end_game_seconds_remaining == "266") %>%
     ungroup() %>%
+    filter(player_id.x == "2700") %>%
     group_by(game_id, quarter, quarter_time, end_game_seconds_remaining,
              end_quarter_seconds_remaining, player_id.x,team_id, user_time) %>%
+    filter(end_game_seconds_remaining == "600") %>%
     summarise(is_on_verdict = last(is_on), .groups = "drop") %>%
+    view()
+    show_query()
+    filter(player_id.x == "31244") %>%
+    view()
+    
+    group_by(game_id, quarter, quarter_time, end_game_seconds_remaining,
+             end_quarter_seconds_remaining,
+             team_id)
+    
       pivot_wider(id_cols = c(game_id, quarter, quarter_time, end_game_seconds_remaining,
                               end_quarter_seconds_remaining,
-                              team_id), names_from = player_id.x,
+                              team_id, user_time), names_from = player_id.x,
                   values_from = is_on_verdict) %>%
+    #select(end_game_seconds_remaining, team_id,  c('2515', '31430')) %>%
     view()
     group_by(game_id, quarter, quarter_time, end_game_seconds_remaining,
              end_quarter_seconds_remaining,
-             team_id,) %>%
+             team_id) %>%
     dbplyr::window_order(quarter, desc(quarter_time), user_time) %>%
     filter(player_id.x == "19461") %>%
     view()
 
+    
+    
     
     pivot_wider(id_cols = c(game_id, quarter, quarter_time, end_game_seconds_remaining,
                             end_quarter_seconds_remaining,
@@ -490,6 +611,16 @@ stints %>%
 substiution_data %>%
   filter(game_id == "64899") %>%
   view()
+  
+
+poss %>%
+  group_by(game_id, team_id) %>%
+  summarise(total_pts = sum(team_score, na.rm = TRUE),
+            total_poss = sum(final_end_poss, na.rm = TRUE)) %>%
+  mutate(pts_per_poss = total_pts / total_poss) %>%
+  filter(team_id != 0) %>%
+  arrange(game_id) 
+   
   
 player_cols <- colnames(df_lineups %>%
                           select(matches("\\d")))
@@ -645,6 +776,7 @@ df_pts_poss_lineups %>%
   filter(n > 1) %>%
   tally()
   
+dbGetQuery(con, "SHOW TABLES")
 
 
 compute(df_games_teams, "games_teams", temporary = TRUE)
