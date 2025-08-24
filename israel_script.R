@@ -84,8 +84,11 @@ json_resp <- httr2::req_perform_parallel(req_list[1:10], on_error = "continue", 
   
 json_resp <- future_map(links, ~jsonlite::read_json(.x, simplifyVector = TRUE))
 
+json_box
 
+json_resp[[1]]$result$gameInfo$homeTeam$players
 
+f
 
 json_box <- jsonlite::read_json("https://stats.segevstats.com/realtimestat_heb/get_team_score.php?game_id=62428", simplifyVector = TRUE)
 
@@ -108,11 +111,16 @@ df_list <- map(json_resp, ~list(colnames(.x$result$actions %>% unnest(parameters
 
 
 json_box <- future_map(links_box, ~jsonlite::read_json(.x, simplifyVector = TRUE))
+
   
 json_box[[1]]$result$boxscore$homeTeam
 
 
+json_box[[1]]$result$boxscore$homeTeam$players %>% 
+mutate(team_id = json_box[[1]]$result$boxscore$gameInfo$homeTeamId)
 
+
+json_box[[1]]$result$boxscore$awayTeam$players
 
 
 json_box[[1]]$result$boxscore$homeTeam$players %>%
@@ -165,6 +173,7 @@ poss <- actions %>%
                                        TRUE~parent_action_id)) %>%
   mutate(q_bucket=  if_else(quarter < 5, 0L, quarter)) %>%
    group_by(game_id, parent_action_id) %>%
+  dbplyr::window_order(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
    mutate(end_poss = case_when(type == "shot" & parameters_made == "made"~ TRUE,
                                lead(parameters_type) == "defensive" & lead(type) == "rebound"~TRUE,
                                type == "freeThrow" & parameters_made == "made" & pct_ft == 1~TRUE,
@@ -249,15 +258,17 @@ roster_helper <- function (x) {
   }
   else {
   players_roster <- bind_rows(x$result$gameInfo$awayTeam$players %>%
-  mutate(team_id = x$result$gameInfo$awayTeam$id),
+  mutate(team_id = x$result$gameInfo$awayTeam$id, 
+         game_id = x$result$gameInfo$gameId),
   x$result$gameInfo$homeTeam$players %>%
-      mutate(team_id = x$result$gameInfo$homeTeam$id)) %>% 
-  rename(player_id = id) %>%
-  distinct(player_id, team_id)
+      mutate(team_id = x$result$gameInfo$homeTeam$id, 
+             game_id = x$result$gameInfo$gameId)) %>% 
+  rename(player_id = id)
   }
-  
   return(players_roster)
 }
+
+
 
 poss %>%
   distinct(team_id, game_id) %>%
@@ -302,6 +313,18 @@ players_data_full <- furrr::future_map(json_resp, ~roster_helper(.x))  %>%
   distinct() %>%
   mutate(is_on = FALSE)
 
+
+poss %>%
+  distinct(game_id) %>%
+  tally()
+
+
+poss %>%
+  filter(game_id == 62522)
+
+players_data_full %>%
+  filter(game_id == "62522")
+
 df_games_teams %>%
   filter(game_id == "62522")
 
@@ -309,9 +332,9 @@ players_data_with_games <- players_data_full %>%
   distinct() %>%
   inner_join(df_games_teams, by = c("team_id"))
 
-compute(players_data_with_games, name = "full_rosters",temporary = FALSE, overwrite = TRUE)
+copy_to(con, players_data_full, "full_rosters", overwrite = TRUE, temporary = FALSE)
 
-
+DBI::dbExecute(con, "TRUNCATE TABLE full_rosters;")
 
 dbWriteTable(con, "full_rosters", players_)
 
@@ -380,7 +403,7 @@ DBI::dbExecute(con, "DROP TABLE IF EXISTS subs")
 full_rosters <- tbl(con, "full_rosters")
 
 dbGetQuery(con, "SELECT *
-           FROM subs")
+           FROM full_rosters")
 
 subs <- tbl(con, "subs")
 
@@ -434,14 +457,17 @@ test_r <- full_rosters %>%
 dbGetQuery(con, "SHOW TABLES")  
 
 full_rosters %>%
-  filter(player_id == "2543") %>%
+  filter(player_id == "32331") %>%
+  view()
+
+subs %>%
+  filter(game_id == "62466", quarter == 1, end_game_seconds_remaining == 1954) %>%
   view()
 
 
 df_lineups <- full_rosters %>%
   mutate(team_id = as.integer(team_id)) %>%
-  distinct(player_id, game_id, team_id) %>%
-  mutate(is_on = FALSE) %>%
+  select(player_id, game_id, team_id) %>%
   inner_join(subs, by = c("team_id", "game_id")) %>%
   #filter(team_id.x == team_id.y) %>%
   mutate(is_on = case_when(player_id.x==parameters_player_in~TRUE,
@@ -450,22 +476,17 @@ df_lineups <- full_rosters %>%
   group_by(game_id, player_id.x) %>%
   dbplyr::window_order(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
   fill(is_on, .direction = "down") %>%
-  ungroup() %>%
   mutate(.ord = row_number()) %>%
+  ungroup() %>%
   slice_max(
     order_by = .ord, n = 1, with_ties = FALSE,
     by = c(game_id, quarter, quarter_time, end_game_seconds_remaining,
            end_quarter_seconds_remaining, player_id.x, team_id)
   ) %>%
-  select (game_id, player_id = player_id.x, team_id,
+  select (id, game_id, player_id = player_id.x, team_id,
             quarter, quarter_time, end_game_seconds_remaining,
             end_quarter_seconds_remaining,
             is_on_verdict = is_on) %>%
-  group_by(player_id, game_id, quarter, quarter_time, end_game_seconds_remaining,
-           end_quarter_seconds_remaining,
-           team_id, is_on_verdict) %>%
-
-  #dbplyr::window_order(desc(end_game_seconds_remaining), quarter, quarter_time, team_id, player_id) %>%
   mutate(
     lineup_id = dbplyr::sql("
     string_agg(
@@ -481,8 +502,202 @@ df_lineups <- full_rosters %>%
     sum(CASE WHEN is_on_verdict IS TRUE THEN 1 ELSE 0 END)
     OVER (PARTITION BY game_id, team_id, quarter, end_game_seconds_remaining)
   ")) %>% 
-  ungroup() %>%
   mutate(lineup_hash = dbplyr::sql("md5(lineup_id)")) %>%
+  view("test")
+  tally()
+  
+compute(con, df_lineups, "lineups_lookup")
+
+
+lineups_segments <- df_lineups %>%
+  distinct(id, game_id, team_id, quarter, quarter_time, end_game_seconds_remaining, end_quarter_seconds_remaining, 
+           lineup_id, lineup_hash) %>%
+  group_by(game_id, team_id) %>%
+  dbplyr::window_order(quarter, desc(end_game_seconds_remaining),
+                       id) %>%
+  left_join(poss %>%
+               select(id, game_id, quarter, team_id) %>%
+               group_by(quarter, game_id, team_id) %>%
+               summarise(last_id = max(id)) %>%
+                           filter(quarter >= 4), by = c("game_id", "quarter", "team_id")) %>%
+  mutate(start_segment = end_game_seconds_remaining, 
+         end_segment = case_when(lead(quarter) > quarter & lead(quarter) >= 5 ~ 0,
+                                 TRUE~coalesce(lead(end_game_seconds_remaining),0)),
+         start_id = id,
+         end_id = coalesce(lead(id), last_id)) %>%
+          ungroup() %>% select(-last_id)
+
+
+
+poss %>%
+ filter(game_id == "62437") %>%
+  view()
+
+inner_join(poss %>%
+             select(id, game_id) %>%
+             group_by(game_id) %>%
+             summarise(last_id = last(id)), by = c("game_id"))
+
+df_pts_poss_lineups
+
+
+# Materialize to staging table
+df_lineups %>%
+  compute(name = sql('"lineups lookup_stage"'), temporary = FALSE)
+
+## 2) Create FINAL table, physically ordered for your common partitions
+DBI::dbExecute(con, '
+  CREATE OR REPLACE TABLE "lineups lookup" AS
+  SELECT *
+  FROM "lineups lookup_stage"
+  ORDER BY game_id, team_id, quarter, end_game_seconds_remaining, player_id;
+')
+
+# Drop stage
+DBI::dbExecute(con, 'DROP TABLE IF EXISTS "lineups lookup_stage";')
+
+## 3) Indexes on "lineups lookup" (minimal, high-impact)
+# a) Slice index (helps slice/window probes if needed)
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineups_lookup_slice
+  ON "lineups lookup"(game_id, team_id, quarter, end_game_seconds_remaining);
+')
+
+# b) Hash index — hot path: poss ↔ lineups_lookup by lineup_hash
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineups_lookup_hash
+  ON "lineups lookup"(lineup_hash);
+')
+
+# c) Player-centric lookups (on/off)
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineups_lookup_player_on
+  ON "lineups lookup"(player_id, is_on_verdict);
+')
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineups_lookup_player_game
+  ON "lineups lookup"(player_id, game_id);
+')
+
+## 4) Helper tables for fastest joins/lookups
+
+# A) Dictionary: lineup_hash → lineup_id (5-man string)
+DBI::dbExecute(con, '
+  CREATE OR REPLACE TABLE lineup_dim AS
+  SELECT DISTINCT lineup_hash, lineup_id
+  FROM "lineups lookup";
+')
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineup_dim_hash
+  ON lineup_dim(lineup_hash);
+')
+
+# B) Inverted index: which players are ON in each lineup
+DBI::dbExecute(con, '
+  CREATE OR REPLACE TABLE lineup_players AS
+  SELECT DISTINCT lineup_hash, player_id
+  FROM "lineups lookup"
+  WHERE is_on_verdict IS TRUE;
+')
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineup_players_hash
+  ON lineup_players(lineup_hash);
+')
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_lineup_players_player
+  ON lineup_players(player_id);
+')
+
+## 5) (Optional) If poss joins by lineup_hash, index it too
+DBI::dbExecute(con, '
+  CREATE INDEX IF NOT EXISTS idx_poss_lineup_hash
+  ON pws(lineup_hash);
+')
+
+
+## 6) Refresh stats for good plans
+DBI::dbExecute(con, 'ANALYZE;')
+
+DBI::dbExecute(con, 'ALTER TABLE "lineups lookup" RENAME TO lineups_lookup;')
+
+dbGetQuery(con, "SHOW TABLES")
+
+dbGetQuery(con, "SELECT *
+           FROM lineup_players")
+
+
+df_pts_poss_lineups_longer %>%
+  group_by(lineup_hash) %>%
+  summarise(total_poss = sum(final_end_poss, na.rm = TRUE)) %>%
+  ungroup() %>%
+  filter(is.na(total_poss)) %>%
+  inner_join(df_pts_poss_lineups_longer, by = c("lineup_hash")) %>%
+  group_by(lineup_hash) %>%
+  dbplyr::window_order(lineup_hash, id, quarter, desc(end_game_seconds_remaining), user_time) %>%
+  filter(lineup_hash == "9940098e2c71973811abdb0d993f5fe9") %>%
+  view()
+  
+df_pts_poss_lineups %>%
+  filter(quarter == 1, game_id == "62437") %>%
+  view()
+
+stints %>%
+  filter(game_id == "62437") %>%
+  view()
+
+
+  filter(lineup_hash_defense == "91a5d0e24fc509163ec4d70f2e546970"|
+           lineup_hash_offense == "91a5d0e24fc509163ec4d70f2e546970") %>%
+  view("lineup_df")
+
+df_pts_poss_lineups_longer %>%
+  filter(segment_id == 31 & game_id == 62437) %>%
+  view()
+  filter(lineup_hash == "91a5d0e24fc509163ec4d70f2e546970") %>%
+  view()
+
+pws %>%
+  group_by(lineup_hash_offense) %>%
+  
+  
+stints <- lineups_segments %>%
+  ungroup() %>%
+  dbplyr::window_order(quarter, desc(start_segment)) %>%
+  inner_join(lineups_segments, by = c("game_id"), suffix = c("_offense", "_defense")) %>%
+  filter(team_id_offense != team_id_defense,
+         quarter_offense < 5 & quarter_defense < 5 |
+           quarter_offense >=5 & quarter_defense >= 5 & quarter_offense == quarter_defense) %>%
+  mutate(final_start_seg = pmin(start_segment_offense, start_segment_defense),
+         final_end_seg = pmax(end_segment_offense, end_segment_defense),
+         quarter_min = pmin(quarter_offense, quarter_defense),
+         quarter_max = pmax(quarter_offense, quarter_defense),
+         final_start_id = pmax(start_id_offense, start_id_defense),
+         final_end_id = pmin(end_id_offense, end_id_defense)) %>%
+  mutate(q_bucket = if_else(quarter_min < 5 & quarter_min < 5, 0L, quarter_min)) %>%
+  relocate(c(final_start_seg, final_end_seg), .after = team_id_offense) %>%
+  #filter(final_end_seg < final_start_seg) %>%
+  filter(final_end_id > final_start_id) %>%
+  filter(final_end_seg == final_start_seg) %>%
+  filter(game_id == 62514) %>%
+  view()
+  group_by(game_id, final_start_id, final_end_id) %>%
+  mutate(segment_id = dbplyr::sql("DENSE_RANK() OVER (
+  PARTITION BY game_id
+  ORDER BY final_start_id, final_end_seg)")) %>%
+  relocate(segment_id, .after = final_end_id) %>%
+  ungroup() %>%
+  relocate(c(quarter_min, quarter_max, quarter_defense, q_bucket), .after = quarter_offense) %>%
+  dbplyr::window_order(quarter_offense, desc(final_start_seg)) %>%
+  rename(team_id = team_id_offense) %>%
+  select(team_id, game_id, final_start_seg, final_end_seg, segment_id,
+         lineup_hash_offense, lineup_hash_defense, team_id_defense, q_bucket,
+         final_start_id, final_end_id) %>%
+  window_order(desc(final_start_id)) %>%
+  view()
+
+
+  
+subs %>%
   filter(game_id == 62447, quarter == 4) %>%
   view()
 
@@ -500,7 +715,8 @@ actions %>%
   summarise(n = n_distinct(end_game_seconds_remaining), .groups = "drop") %>%
   filter(n < 300) %>%
   ggplot(aes(x=n)) + geom_histogram()
-  
+
+
   
 
 actions %>%
@@ -620,6 +836,9 @@ poss %>%
   mutate(pts_per_poss = total_pts / total_poss) %>%
   filter(team_id != 0) %>%
   arrange(game_id) 
+
+df_lineups %>%
+  tally()
    
   
 player_cols <- colnames(df_lineups %>%
@@ -678,42 +897,48 @@ stints %>%
 
 #add stints to ppp
 
-
-stints %>%
-  filter(game_id == "64899") %>%
-  arrange(quarter, desc(final_start_seg)) %>%
-  view()
-
-
-df_pts_poss_lineups %>%
-  group_by()
-
 by <- join_by(team_id, game_id, q_bucket, between(end_game_seconds_remaining, final_end_seg, final_start_seg, bounds = "(]"))
 
-DBI::dbWriteTable(con, "stints", stints, overwrite = TRUE)
+class
 
+# overwrite safely
+DBI::dbExecute(con, "DROP TABLE IF EXISTS stints;")
 
-
-stints
-
-df_pts_poss_lineups %>%
-  select(q_bucket)
+stints %>%
+  compute(name = "stints", temporary = FALSE)
 
 
 stints_tbl <- tbl(con, "stints")
 
 df_pts_poss_lineups <- left_join(poss %>%
                                    mutate(end_game_seconds_remaining = if_else(end_game_seconds_remaining == 0,  
-                                                                               end_game_seconds_remaining+1e-6,        
+                                                                               end_game_seconds_remaining + 0.00001,        
                                                                                end_game_seconds_remaining)), stints_tbl, by)
 
 
 
+class(df_lineups)
+
+df_lineups %>%
+  summarise(n = n_distinct(game_id))
+
+
+class(df_pts_poss_lineups)
+
+df_pts_poss_lineups %>%
+  filter(id == "625220113") %>%
+  view()
+
+  
+df_pts_poss_lineups %>%
+  filter(team_id != 0) %>%
+  filter(is.na(lineup_hash_defense)) %>%
+  filter(game_id %in% c('62447', '62452', '62534')) %>%
+  view()
 
 
 df_pts_poss_lineups %>%
   filter(round(end_game_seconds_remaining,1) == 0) %>%
-  tally()
   distinct(game_id)
 
 df_pts_poss_lineups %>%
@@ -779,19 +1004,158 @@ df_pts_poss_lineups %>%
 dbGetQuery(con, "SHOW TABLES")
 
 
+
+
 compute(df_games_teams, "games_teams", temporary = TRUE)
 
 players_data_with_games <- copy_to(con, df_games_teams, temporary = TRUE)
 
 DBI::dbWriteTable(con, name = "lineup_lookup",
                   )
+library(DBI)
+library(dplyr)
 
-df_pts_poss_lineups_longer <- df_pts_poss_lineups %>%
-  filter(!game_id %in% c('62527', '62541', '62522')) %>%
-  pivot_longer(c(lineup_hash_offense, lineup_hash_defense)) %>%
-  mutate(type = str_remove(name, "lineup_hash_")) %>%
-  mutate(team_id = case_when(type == "offense"~team_id,
-                                   type == "defense"~team_id_defense)) %>%
+## Build the lazy UNION ALL while keeping all original columns
+offense <- df_pts_poss_lineups %>%
+  filter(!game_id %in% c("62527","62541","62522")) %>%
+  mutate(
+    type = "offense",
+    lineup_hash = lineup_hash_offense
+  ) %>%
+  select(-c(lineup_hash_defense, team_id_defense, lineup_hash_offense))
+
+defense <- df_pts_poss_lineups %>%
+  filter(!game_id %in% c("62527","62541","62522")) %>%
+  mutate(
+    type = "defense",
+    lineup_hash = lineup_hash_defense,
+    team_id = team_id_defense
+  ) %>%
+  select(-c(lineup_hash_offense, team_id_defense, lineup_hash_defense))
+
+df_pts_poss_lineups_longer <- union_all(offense, defense) %>%
+  filter(!is.na(lineup_hash))
+
+## Transaction wrapper: all-or-nothing
+tryCatch({
+  dbExecute(con, "BEGIN;")
+  
+  # Clean old stage/final
+  dbExecute(con, "DROP TABLE IF EXISTS df_pts_poss_lineups_longer_stage;")
+  # Do NOT drop the final yet—only replace after stage succeeds
+  
+  # Materialize stage
+  df_pts_poss_lineups_longer %>%
+    compute(name = sql("df_pts_poss_lineups_longer_stage"), temporary = FALSE)
+  
+  # Create final ordered table
+  dbExecute(con, '
+    CREATE OR REPLACE TABLE df_pts_poss_lineups_longer AS
+    SELECT * FROM df_pts_poss_lineups_longer_stage
+    ORDER BY game_id, team_id, type, lineup_hash;
+  ')
+  dbExecute(con, "DROP TABLE IF EXISTS df_pts_poss_lineups_longer_stage;")
+  
+  # Indexes tuned for your hot paths
+  dbExecute(con, '
+    CREATE INDEX IF NOT EXISTS idx_dfppl_lineup_hash
+      ON df_pts_poss_lineups_longer(lineup_hash);
+    CREATE INDEX IF NOT EXISTS idx_dfppl_team_game
+      ON df_pts_poss_lineups_longer(team_id, game_id);
+    ANALYZE;
+  ')
+  
+  dbExecute(con, "COMMIT;")
+}, error = function(e) {
+  message("Error occurred: ", conditionMessage(e))
+  try(dbExecute(con, "ROLLBACK;"), silent = TRUE)
+  stop(e)
+})
+
+df_pts_poss_lineups_longer %>%
+  group_by(lineup_hash, type) %>%
+  summarise(total_pts = sum(team_score, na.rm = TRUE),
+            total_poss = sum(final_end_poss, na.rm = TRUE),
+            .groups = "drop") %>%
+  filter(total_poss >= 100) %>%
+  mutate(pts_per_poss = total_pts / total_poss) %>%
+  ungroup() %>%
+  view()
+  inner_join(lineups_lookup %>%
+  distinct(player_id, team_)
+    
+    
+df_pts_poss_lineups_longer %>%
+  filter(lineup_hash == "bd7aa10465bec18687d05e2da3311968") %>%
+  group_by(team_id, type, lineup_hash, game_id, quarter) %>%
+  summarise(total_poss = sum(final_end_poss, na.rm = TRUE),
+            total_pts = sum(team_score, na.rm = TRUE)) %>%
+  ungroup() %>%
+  view()
+
+  lineups_lookup %>%
+          distinct(player_id, team_id, quarter, is_on_verdict, 
+                        lineup_hash) %>%
+                        filter(is_on_verdict == TRUE) %>%
+    filter(lineup_hash == "bd7aa10465bec18687d05e2da3311968") %>%
+    inner_join(full_rosters, by = c("player_id")) %>%
+    view()
+    
+    
+    filter(team_id == 246) %>%
+    inner_join(df_pts_poss_lineups_longer %>%
+                 select(id, team_score, final_end_poss, lineup_hash, type), by = c("lineup_hash")) %>%
+    group_by(team_id, lineup_hash, type) %>%
+    summarise(total_pts = sum(team_score, na.rm = TRUE),
+              total_poss = sum(final_end_poss, na.rm = TRUE)) %>%
+    inner_join(full_rosters %>%
+                 distinct(player_id, firstNameLocal, lastNameLocal), by = c("player_id"))
+    ungroup() %>%
+    arrange(desc(total_poss)) %>%
+    view()
+    
+segments <- stints_tbl %>%
+  filter(lineup_hash_offense == "bd7aa10465bec18687d05e2da3311968") %>%
+  filter(game_id == 62602) %>%
+  distinct(segment_id, final_start_seg, final_end_seg) %>%
+  arrange(desc(segment_id)) %>%
+  pull(segment_id) 
+
+df_pts_poss_lineups %>%
+  filter(game_id == 62602) %>%
+  filter(segment_id %in% segments) %>%
+  view()
+  group_by(team_id, type) %>%
+  summarise(total_pts = sum(team_score, na.rm = TRUE),
+            total_poss = sum(final_end_poss, na.rm = TRUE)) %>%
+  arrange(team_id, type)
+
+  distinct(game_id)
+
+  
+
+lineups_lookup <- tbl(con, 'lineups lookup')
+
+dbGetQuery(con, "SELECT *
+           FROM 'lineups lookup'")
+
+dbGetQuery(con, "SHOW TABLES")
+dbGetQuery(con, 
+           "SELECT *
+            FROM df_pts_poss_lineups_longer 
+            ORDER BY game_id, id") %>%
+  view()
+
+
+  df_pts_poss_lineups_longer <- df_pts_poss_lineups %>%
+    filter(!game_id %in% c('62527', '62541', '62522')) %>%
+    pivot_longer(c(lineup_hash_offense, lineup_hash_defense)) %>%
+    mutate(type = str_remove(name, "lineup_hash_")) %>%
+    mutate(team_id = case_when(type == "offense"~team_id,
+                                     type == "defense"~team_id_defense)) %>%
+    select(-c(team_id_defense, name)) %>%
+    rename(lineup_hash = value)
+  
   group_by(team_id, type, value) %>%
   summarise(total_poss = as.numeric(sum(final_end_poss, na.rm = TRUE)),
             total_pts = sum(team_score, na.rm = TRUE)) %>%
