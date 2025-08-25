@@ -106,12 +106,41 @@ tictoc::toc()
 
 #count points and possesions  
 
+df_pts_poss_lineups %>%
+  filter(is.na(lineup_hash_defense)) %>%
+  filter(team_id != 0) %>%
+  filter(type != "substitution") %>%
+  tally()
+  summarise(n = n_distinct(game_id))
 
+poss %>%
+  group_by(game_id) %>%
+  window_order(id) %>%
+  mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0) %>%
+  relocate(is_bigger, .after = id) %>%
+  filter(game_id == 62543) %>%
+  view()
+
+  view()
+  
+  group_by(game_id) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  view()
+  
 poss <- actions %>%
-   mutate(pct_ft = parameters_free_throw_number / parameters_free_throws_awarded) %>%
-   mutate(parent_action_id = case_when(parent_action_id == 0~id,
-                                       TRUE~parent_action_id)) %>%
+  mutate(pct_ft = parameters_free_throw_number / parameters_free_throws_awarded) %>%
   mutate(q_bucket=  if_else(quarter < 5, 0L, quarter)) %>%
+  group_by(game_id) %>%
+  window_order(id) %>%
+  mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0,
+  id = case_when(is_bigger == TRUE & type == "rebound" & parameters_type == "offensive"~lag(id),
+                             lead(is_bigger) == TRUE & lead(type) == "rebound" & lead(parameters_type) == "offensive" ~ lead(id),
+                             TRUE~id)) %>%
+  ungroup() %>%
+  select(-is_bigger) %>%
+  mutate(parent_action_id = case_when(parent_action_id == 0~id,
+                                      TRUE~parent_action_id)) %>%
    group_by(game_id, parent_action_id) %>%
   dbplyr::window_order(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
    mutate(end_poss = case_when(type == "shot" & parameters_made == "made"~ TRUE,
@@ -126,10 +155,27 @@ poss <- actions %>%
                                      sum_tech >= 1 ~ NA,
                                      TRUE~end_poss)) %>%
    ungroup() %>%
-   mutate(parameters_points = case_when(parameters_made == "made" & type == "freeThrow" ~ 1, 
+    mutate(parameters_points = case_when(parameters_made == "made" & type == "freeThrow" ~ 1, 
                                         TRUE~parameters_points)) %>%
    mutate(team_score = case_when(parameters_made=="made"~parameters_points))
 
+
+poss %>%
+  group_by(game_id) %>%
+  window_order(id) %>%
+  mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0) %>%
+  ungroup() %>%
+  group_by(is_bigger, parameters_type, type) %>%
+  summarise(n = n_distinct(game_id)) %>%
+  filter(is_bigger == TRUE) %>%
+  view()
+  
+  summarise(n = n()) %>%
+  ungroup() %>%
+  group_by(parameters_type, type) %>%
+  mutate(freq = n / sum(n)) %>%
+  filter(is_bigger == TRUE) %>%
+  view()
 
 compute(poss, name = "possessions", temporary = FALSE, overwrite = TRUE, cte = TRUE)
 DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_poss_gtt ON possessions(game_id, team_id, end_game_seconds_remaining);")
@@ -441,11 +487,50 @@ tryCatch({
 })
 
 
+DBI::mer
+
+poss %>%
+  filter(game_id == 62433,
+         quarter == 4) %>%
+  view()
+
+
+poss %>%
+  select(game_id, parameters_type, quarter) %>%
+  filter(parameters_type == "end-of-quarter") %>%
+  group_by(game_id, quarter) %>%
+  summarise(n = n()) %>%
+  filter(n > 1) %>%
+  arrange(desc(n)) %>%
+  view()
+  window_order(id) %>%
+  mutate(lag_before_end_quarter = case_when(parameters_type == "end-of-quarter")) 
+  mutate(check_end_poss = case_when(lag()))
+
+poss %>%
+  filter(game_id == 62432) %>%
+  view()
+
+poss %>%
+  filter(game_id == 62492) %>%
+  select(team_id, team_score, id) %>%
+  mutate(team_score = coalesce(team_score, 0)) %>%
+  group_by(team_id) %>%
+  window_order(id) %>%
+  mutate(total_pts = cumsum(team_score)) %>%
+  view()
+
+  
+
+  mutate(score = cumsum(team_score)) %>%
+  view()
 
 
 df_pts_poss_lineups_longer %>%
-  filter(lineup_hash == "32eaf93e199bfb1bd3db6bc30745313c") %>%
+  filter(lineup_hash == "d2c93f1c0a0dbe444ca45e12e200b161") %>%
   view()
+
+df_pts_poss_lineups_longer %>%
   group_by(lineup_hash) %>%
   summarise(total_poss = sum(final_end_poss, na.rm = TRUE)) %>%
   ungroup() %>%
@@ -454,10 +539,10 @@ df_pts_poss_lineups_longer %>%
   group_by(lineup_hash) %>%
   dbplyr::window_order(lineup_hash, id, quarter, desc(end_game_seconds_remaining), user_time) %>%
   select(type, game_id) %>%
-  filter(lineup_hash == "32eaf93e199bfb1bd3db6bc30745313c") %>%
+  ungroup() %>%
+  filter(type == "foul")
   view()
-  filter(type == "shot") %>%
-  view()
+  distinct(type)
  %>%
 
 
@@ -579,7 +664,7 @@ df_pts_poss_lineups %>%
   filter(!game_id %in% c('62527', '62541', '62522')) %>%
   filter(team_id != 0, type != 'substitution') %>%
   filter(is.na(lineup_hash_defense)) %>%
-  filter(game_id == 62534) %>%
+  tally()
   view()
 
 stints_tbl %>%
