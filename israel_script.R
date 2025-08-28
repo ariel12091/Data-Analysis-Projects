@@ -72,7 +72,7 @@ israel_schdule_clean_links <- israel_schedule %>%
 
 links_pbp <- glue::glue("https://stats.segevstats.com/realtimestat_heb/get_team_action.php?game_id={israel_schdule_clean_links$ExternalID}")
 
-json_resp <- future_map(links, ~jsonlite::read_json(.x, simplifyVector = TRUE))
+json_resp <- future_map(links_pbp, ~jsonlite::read_json(.x, simplifyVector = TRUE))
 
 links_box <- glue::glue("https://stats.segevstats.com/realtimestat_heb/get_team_score.php?game_id={israel_schdule_clean_links$ExternalID}")
 
@@ -121,26 +121,115 @@ poss %>%
   filter(game_id == 62543) %>%
   view()
 
+poss %>%
+  filter(game_id == 62478) %>%
   view()
+  
+
+poss %>%
+  select(id, game_id, parent_action_id, end_game_seconds_remaining, quarter, quarter_time,
+         type, parameters_type) %>%
+  inner_join(actions %>% select(id, parent_action_id, end_game_seconds_remaining,
+                                type, parameters_type, 
+                                quarter, quarter_time), 
+             by = c("parent_action_id" = "id")) %>%
+  filter(end_game_seconds_remaining.x > end_game_seconds_remaining.y) %>%
+  mutate(time_diff = end_game_seconds_remaining.x - end_game_seconds_remaining.y) %>%
+  view()
+
   
   group_by(game_id) %>%
   summarise(n = n()) %>%
   arrange(desc(n)) %>%
   view()
   
-poss <- actions %>%
+poss0 <- actions %>%
   mutate(pct_ft = parameters_free_throw_number / parameters_free_throws_awarded) %>%
   mutate(q_bucket=  if_else(quarter < 5, 0L, quarter)) %>%
+  mutate(parameters_points = case_when(parameters_made == "made" & type == "freeThrow" ~ 1, 
+                                       TRUE~parameters_points)) %>%
+  mutate(team_score = case_when(parameters_made=="made"~parameters_points)) %>%
   group_by(game_id) %>%
   window_order(id) %>%
-  mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0,
-  id = case_when(is_bigger == TRUE & type == "rebound" & parameters_type == "offensive"~lag(id),
-                             lead(is_bigger) == TRUE & lead(type) == "rebound" & lead(parameters_type) == "offensive" ~ lead(id),
-                             TRUE~id)) %>%
+  #mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0,
+  #       id = case_when(is_bigger == TRUE & type == "rebound" & parameters_type == "offensive"~lag(id),
+  #                      lead(is_bigger) == TRUE & lead(type) == "rebound" & lead(parameters_type) == "offensive" ~ lead(id),
+  #                      TRUE~id)) %>%
   ungroup() %>%
-  select(-is_bigger) %>%
-  mutate(parent_action_id = case_when(parent_action_id == 0~id,
-                                      TRUE~parent_action_id)) %>%
+  #select(-is_bigger) %>%
+  mutate(parent_action_id = if_else(parent_action_id == 0L, id, parent_action_id))
+
+
+base <- poss0 %>%
+  group_by(game_id, parent_action_id) %>%
+  dbplyr::window_order(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
+  mutate(
+    next_type      = lead(type),
+    next_paramtype = lead(parameters_type),
+    
+    end_poss = case_when(
+      type == "shot"      & parameters_made == "made"             ~ TRUE,
+      next_paramtype == "defensive" & next_type == "rebound"      ~ TRUE,
+      type == "freeThrow" & parameters_made == "made" & pct_ft==1 ~ TRUE,
+      type == "turnover"                                           ~ TRUE,
+      TRUE                                                         ~ FALSE
+    ),
+    sum_poss_poss = sum(end_poss, na.rm = TRUE),
+    sum_block     = sum(parameters_made == "blocked",  na.rm = TRUE),
+    sum_tech      = sum(parameters_type == "technical", na.rm = TRUE),
+    
+    final_end_poss_base = case_when(
+      sum_poss_poss >= 2 & id == parent_action_id ~ NA,
+      sum_block >= 1                               ~ lead(end_poss),
+      sum_tech  >= 1                               ~ NA,
+      TRUE ~ end_poss
+    )
+  ) %>%
+  ungroup() %>%
+  select(-next_type, -next_paramtype)
+
+
+## 2) EoQ overrides computed per (game_id, quarter) so LEAD sees EoQ,
+##    but enforce "previous row must share the SAME parent_action_id".
+eoq_targets <- poss0 %>%
+  group_by(game_id, quarter) %>%
+  dbplyr::window_order(id) %>%
+  mutate(
+    next_paramtype = lead(parameters_type),
+    prev_id        = lag(id),
+    prev_parent    = lag(parent_action_id)
+  ) %>%
+  # three patterns: two mark CURRENT row, block marks PREVIOUS row (same parent)
+  transmute(
+    game_id,
+    id_to_mark = case_when(
+      next_paramtype == "end-of-quarter" & type == "shot"    & parameters_made == "missed"    ~ id,
+      next_paramtype == "end-of-quarter" & type == "rebound" & parameters_type == "offensive" ~ id,
+      next_paramtype == "end-of-quarter" & type == "block" & prev_parent == parent_action_id  ~ prev_id,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  filter(!is.na(id_to_mark)) %>%
+  distinct(game_id, id = id_to_mark) %>%
+  mutate(eoq_override = TRUE) %>%
+  ungroup()
+
+## 3) Apply EoQ overrides with highest priority
+poss_final <- base %>%
+  left_join(eoq_targets, by = c("game_id", "id", "quarter")) %>%
+  mutate(final_end_poss = case_when(
+    eoq_override ~ TRUE,              # EoQ wins
+    TRUE         ~ final_end_poss_base
+  )) %>%
+  select(-eoq_override, -final_end_poss_base)
+
+
+
+
+
+
+
+
    group_by(game_id, parent_action_id) %>%
   dbplyr::window_order(id, quarter, desc(end_game_seconds_remaining), user_time) %>%
    mutate(end_poss = case_when(type == "shot" & parameters_made == "made"~ TRUE,
@@ -155,18 +244,85 @@ poss <- actions %>%
                                      sum_tech >= 1 ~ NA,
                                      TRUE~end_poss)) %>%
    ungroup() %>%
-    mutate(parameters_points = case_when(parameters_made == "made" & type == "freeThrow" ~ 1, 
-                                        TRUE~parameters_points)) %>%
-   mutate(team_score = case_when(parameters_made=="made"~parameters_points))
 
 
+
+
+poss_final %>%
+  filter(game_id == 62436) %>%
+  view()
+   
+
+
+
+poss_final %>%
+  filter(team_id != 0) %>%
+  group_by(team_id, game_id) %>%
+  summarise(total_pts = sum(team_score, na.rm = TRUE),
+            total_poss = sum(final_end_poss, na.rm = TRUE),.groups = "drop") %>%
+  mutate(ppp_calc = (total_pts / total_poss)*100) %>%
+  group_by(team_id) %>%
+  summarise(mean_ppp = round(mean(ppp_calc),1)) %>%
+  view()
+
+
+
+
+
+
+
+actions %>%
+  select(parameters_type, game_id, id, parent_action_id, type, team_id) %>%
+  filter(type == "rebound") %>%
+  inner_join(poss_final %>%
+               select(game_id, id, parent_action_id, type, team_id), by = c("parent_action_id" = "id")) %>%
+  filter(type.y == "rebound") %>%
+  group_by(type.y) %>%
+  summarise(n = n())
+  
+    
+poss_final %>%
+    filter(between(id, 625510145, 625510155)) %>%
+    relocate(c(parameters_type, final_end_poss), .after = type) %>%
+    view("poss")
+  
+actions %>%
+  filter(between(id, 625510145, 625510155)) %>%
+  view("actions")
+  
+
+
+
+
+
+
+
+
+
+actions %>%
+  mutate(id_diff = case_when(parent_action_id != 0 ~ id - parent_action_id,
+                             TRUE~0L)) %>%
+  group_by(game_id) %>%
+  filter(id_diff > 50) %>%
+  summarise(med_diff = median(id_diff, na.rm = TRUE),
+            n = n()) %>%
+  arrange(desc(n)) %>%
+  view()
+  
+  view()
+ 
 poss %>%
   group_by(game_id) %>%
   window_order(id) %>%
-  mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0) %>%
+  mutate(is_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining) > 0,
+         how_bigger = end_game_seconds_remaining - lag(end_game_seconds_remaining)) %>%
+  arrange(desc(how_bigger)) %>%
+  view()
   ungroup() %>%
-  group_by(is_bigger, parameters_type, type) %>%
-  summarise(n = n_distinct(game_id)) %>%
+  filter(game_id == 62567) %>%
+  view()
+  group_by(game_id, is_bigger, parameters_type, type) %>%
+  summarise(n = n()) %>%
   filter(is_bigger == TRUE) %>%
   view()
   
@@ -177,7 +333,7 @@ poss %>%
   filter(is_bigger == TRUE) %>%
   view()
 
-compute(poss, name = "possessions", temporary = FALSE, overwrite = TRUE, cte = TRUE)
+compute(poss_final, name = "possessions", temporary = FALSE, overwrite = TRUE, cte = TRUE)
 DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_poss_gtt ON possessions(game_id, team_id, end_game_seconds_remaining);")
 
 
@@ -227,6 +383,35 @@ substiution_data <-  pbp_clean__games %>%
 compute(substiution_data, name = "subs", temporary = FALSE, overwrite = TRUE, cte = TRUE)
 
 full_rosters <- tbl(con, "full_rosters")
+
+
+filtered_poss <- poss_final %>%
+  window_order(id) %>%
+  group_by(game_id, quarter) %>%
+  slice_max(n = 5, order_by = id) %>%
+  mutate(row_num_filtered = row_number()) %>%
+  ungroup() %>%
+  semi_join(filtered_poss %>%
+           filter(type == "block") %>%
+             distinct(quarter, game_id), by = c("game_id", "quarter")) %>%
+  select(game_id, parameters_type, type, quarter, id, parent_action_id, quarter_time, team_id, end_poss, final_end_poss, 
+         row_num_filtered) %>%
+  arrange(game_id, quarter, row_num_filtered) %>%
+  view()
+
+poss
+
+
+poss %>%
+  filter(game_id == "62464", quarter == 1) %>%
+  relocate(final_end_poss, .after = type) %>%
+  view()
+  
+  group_by(row_num_filtered, type) %>%
+  summarise(n = n()) %>%
+  arrange(row_num_filtered, desc(n)) %>%
+  view()
+
 
 subs <- tbl(con, "subs")
 
@@ -716,6 +901,49 @@ df_pts_poss_lineups %>%
 dbGetQuery(con, "SHOW TABLES")
 
 
+lineups_lookup %>%
+  distinct(player_id, team_id, lineup_hash, is_on_verdict) %>%
+  #filter(team_id == 4) %>%
+  mutate(is_on_verdict = coalesce(is_on_verdict, FALSE)) %>%
+  inner_join(df_pts_poss_lineups_longer, by = c("lineup_hash")) %>%
+  group_by(player_id.x, team_id.x, is_on_verdict, type_lineup) %>%
+  summarise(total_pts = sum(team_score, na.rm = TRUE),
+            total_poss = sum(final_end_poss, na.rm = TRUE),.groups = "drop") %>%
+  mutate(ppp_calc = round((total_pts / total_poss)*100,1)) %>%
+  rename(player_id = player_id.x,
+         team_id = team_id.x) %>%
+  inner_join(full_rosters %>%
+               distinct(player_id, firstName, lastName, team_id),
+             by = c("player_id", "team_id")) %>%
+  distinct() %>%
+  janitor::clean_names() %>%
+  ungroup() %>%
+  group_by(player_id) %>%
+  filter(all(total_poss >= 100)) %>%
+  ungroup() %>%
+  group_by(player_id, type_lineup, team_id) %>%
+  mutate(net_rtg = ppp_calc - lag(ppp_calc, order_by = is_on_verdict)) %>%
+  ungroup() %>%
+  #arrange(player_id, type_lineup, is_on_verdict) %>%
+  group_by(player_id, team_id, is_on_verdict) %>%
+  mutate(total_net_rtg = round(net_rtg - lag(net_rtg, order_by = type_lineup),2)) %>%
+  arrange(desc(total_net_rtg), player_id, team_id, type_lineup, is_on_verdict) %>%
+  view()
+
+
+options("scipen"=100, "digits"=4)  
+  
+
+full_rosters %>%
+  distinct(player_id, team_id, firstNameLocal, lastNameLocal, firstName) %>%
+  filter(firstName == "ROMAN")
+  left_join(lineups_lookup %>%
+  filter(is_on_verdict == TRUE) %>%
+  distinct(lineup_hash, player_id, team_id), by = c("team_id", "player_id")) %>%
+  filter(lineup_hash == "cf6fcd47e1f6595dbd0dd54470d3d433") %>%
+  view()
+  
+  
 
 
 compute(df_games_teams, "games_teams", temporary = TRUE)
@@ -724,18 +952,29 @@ players_data_with_games <- copy_to(con, df_games_teams, temporary = TRUE)
 
 DBI::dbWriteTable(con, name = "lineup_lookup",
 
+lineups_lookup <- tbl(con, "lineups_lookup")                
+                    
 
-df_pts_poss_lineups_longer %>%
-  group_by(lineup_hash, type) %>%
+
+dbGetQuery(con, "SHOW TABLES")
+
+
+
+
+  group_by(lineup_hash, type_lineup) %>%
   summarise(total_pts = sum(team_score, na.rm = TRUE),
             total_poss = sum(final_end_poss, na.rm = TRUE),
             .groups = "drop") %>%
   filter(total_poss >= 100) %>%
   mutate(pts_per_poss = total_pts / total_poss) %>%
   ungroup() %>%
-  view()
   inner_join(lineups_lookup %>%
-  distinct(player_id, team_)
+               filter(is_on_verdict == TRUE) %>%
+               distinct(lineup_hash, team_id, player_id), by = c("lineup_hash")) %>%
+  inner_join(full_rosters %>%
+               distinct(player_id, firstNameLocal, lastNameLocal, team_id), by = c("player_id")) %>%
+  arrange(desc(pts_per_poss), lineup_hash, type_lineup) %>%
+  view()
     
     
 df_pts_poss_lineups_longer %>%
