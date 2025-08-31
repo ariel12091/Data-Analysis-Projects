@@ -3,9 +3,7 @@ library(shiny)
 library(dplyr)
 library(dbplyr)
 library(gt)
-library(gtExtras)
 library(scales)
-library(DT)
 
 # Assumptions: these are dbplyr lazy tables, e.g.:
 # con <- DBI::dbConnect(duckdb::duckdb())
@@ -31,10 +29,7 @@ ui <- fluidPage(
       downloadButton("download_csv", "Download CSV")
     ),
     mainPanel(
-      tabsetPanel(
-        tabPanel("Styled (gt)",  gt_output("onoff_gt")),
-        tabPanel("Interactive (DT)", DTOutput("onoff_dt"))
-      )
+      gt_output("onoff_gt")
     )
   )
 )
@@ -117,13 +112,7 @@ server <- function(input, output, session) {
     base0 <- lineups_lookup %>%
       distinct(player_id, team_id, lineup_hash, is_on_verdict) %>%
       mutate(is_on_verdict = coalesce(is_on_verdict, FALSE)) %>%
-      {
-        if (!is.null(tids) && length(tids)) {
-          filter(., team_id %in% !!tids)
-        } else {
-          .
-        }
-      }
+      { if (!is.null(tids) && length(tids)) filter(., team_id %in% !!tids) else . }
     
     sched_tbl <- sched_filtered()
     
@@ -151,8 +140,8 @@ server <- function(input, output, session) {
       )
     
     # Eligibility thresholds from UI (≥)
-    min_all  <- reactive(input$min_all_poss)
-    min_on   <- reactive(input$min_on_poss)
+    min_all <- input$min_all_poss
+    min_on  <- input$min_on_poss
     
     elig <- with_names %>%
       group_by(player_id, team_id) %>%
@@ -165,12 +154,12 @@ server <- function(input, output, session) {
     filtered <- with_names %>%
       inner_join(
         elig %>%
-          filter(min_poss_all >= !!min_all(),   # ≥ from UI
-                 max_poss_on  >= !!min_on()),   # ≥ from UI
+          filter(min_poss_all >= !!min_all,
+                 max_poss_on  >= !!min_on),
         by = c("player_id","team_id")
       )
     
-    # Window 1: OFF→ON order; working flip logic
+    # Window 1: OFF→ON order; your flipped net calc stays
     filtered2 <- filtered %>%
       mutate(
         is_on_key = if_else(is_on_verdict, 1L, 0L),
@@ -228,7 +217,7 @@ server <- function(input, output, session) {
         `Def OFF PPP`   = defense_off_ppp,
         `Def ON Net`    = defense_on_net
       ) %>%
-      # Final display threshold: Net RTG ≥ input$min_net_rtg
+      # Final display threshold: Net RTG ≥ slider
       filter(`Total Net RTG` >= !!input$min_net_rtg) %>%
       select(
         Team, `First Name`, `Last Name`, `Total Net RTG`,
@@ -239,11 +228,14 @@ server <- function(input, output, session) {
       )
     
     final_lazy
-  }) %>% bindEvent(debounced_range(), debounced_teams(), input$min_all_poss, input$min_on_poss, input$min_net_rtg)
+  }) %>% bindEvent(debounced_range(), debounced_teams(),
+                   input$min_all_poss, input$min_on_poss, input$min_net_rtg)
   
-  # ---------- Styled GT (percentile-colored; defense lower=better) ----------
+  # ---------- Styled GT (percentile-colored; sorting ON; filters OFF; sticky cols) ----------
   output$onoff_gt <- render_gt({
-    df <- lazy_result() %>% collect()
+    df <- lazy_result() %>%
+      collect() %>%
+      arrange(desc(`Total Net RTG`), Team, `Last Name`, `First Name`)  # default sort
     
     pal <- col_numeric(
       palette = c("#e57373", "#f4c7a1", "#cbead3", "#59c1a9"),
@@ -279,18 +271,23 @@ server <- function(input, output, session) {
                              `Def ON PPP`, `Def OFF PPP`, `Def ON Net`),
                  decimals = 1) %>%
       fmt_number(columns = c(`ON Poss`, `OFF Poss`), decimals = 0, use_seps = TRUE) %>%
-      # Color by percentile
+      tab_style(
+        style = cell_borders(sides = "left", weight = px(2), color = "black"),
+        locations = list(
+          cells_body(columns = `Off ON PPP`),
+          cells_body(columns = `Def ON PPP`),
+          cells_column_labels(columns = `Off ON PPP`),
+          cells_column_labels(columns = `Def ON PPP`)
+        )
+        ) %>%
+      # Percentile coloring
       data_color(columns = c(`Total Net RTG`, `Off ON PPP`, `Off OFF PPP`, `Off ON Net`),
                  colors  = color_by_pct_desc) %>%
       data_color(columns = c(`Def ON PPP`, `Def OFF PPP`, `Def ON Net`),
                  colors  = color_by_pct_asc) %>%
       cols_width(
-        Team ~ px(120), `First Name` ~ px(90), `Last Name` ~ px(90),
-        everything() ~ px(70)
-      ) %>%
-      tab_style(
-        style = cell_borders(sides = "left", color = "black", weight = px(2)),
-        locations = list(cells_column_spanners(spanners = c("Offense", "Defense")))
+        Team ~ px(140), `First Name` ~ px(100), `Last Name` ~ px(110),
+        everything() ~ px(80)
       ) %>%
       tab_options(
         table_body.border.bottom.width = px(1),
@@ -300,48 +297,26 @@ server <- function(input, output, session) {
         table.background.color = "#fffaf3",
         column_labels.font.weight = "bold"
       ) %>%
+      # Keep sorting only (no filters/search)
       opt_interactive(
         use_sorting = TRUE,
-        use_filters = TRUE,
-        use_search = TRUE,
+        use_filters = FALSE,
+        use_search  = FALSE,
         use_resizers = TRUE,
-        use_page_size_select = TRUE,
-        page_size_default = 25,
+        page_size_default = 30,
+        use_page_size_select = FALSE,
         use_compact_mode = TRUE,
         height = "auto"
-      )
-  }) %>% bindEvent(debounced_range(), debounced_teams(), input$min_all_poss, input$min_on_poss, input$min_net_rtg)
-  
-  # ---------- Interactive DT ----------
-  output$onoff_dt <- renderDT({
-    df <- lazy_result() %>%
-      collect() %>%
-      arrange(desc(`Total Net RTG`), Team, `Last Name`, `First Name`)
-    
-    datatable(
-      df,
-      rownames = FALSE,
-      filter   = "top",
-      options  = list(
-        pageLength = 25,
-        scrollX    = TRUE,
-        dom        = "Bfrtip",
-        buttons    = c("copy","csv","excel"),
-        order      = list(list(3, "desc"))
-      ),
-      extensions = c("Buttons","FixedHeader")
-    ) |>
-      formatRound(c("Off ON PPP","Off OFF PPP","Def ON PPP","Def OFF PPP",
-                    "Off ON Net","Def ON Net"), 1) |>
-      formatRound("Total Net RTG", 2) |>
-      formatCurrency(c("ON Poss","OFF Poss"), currency = "", interval = 3, mark = ",")
-  }) %>% bindEvent(debounced_range(), debounced_teams(), input$min_all_poss, input$min_on_poss, input$min_net_rtg)
+      ) 
+  }) %>% bindEvent(debounced_range(), debounced_teams(),
+                   input$min_all_poss, input$min_on_poss, input$min_net_rtg)
   
   # ---------- Download ----------
   output$download_csv <- downloadHandler(
     filename = function() paste0("onoff_summary_", Sys.Date(), ".csv"),
     content = function(file) {
-      df <- lazy_result() %>% collect() %>%
+      df <- lazy_result() %>%
+        collect() %>%
         arrange(desc(`Total Net RTG`), Team, `Last Name`, `First Name`)
       readr::write_csv(df, file, na = "")
     }
